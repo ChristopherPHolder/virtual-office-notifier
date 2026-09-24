@@ -1,23 +1,36 @@
 {
   "name": "virtual-office-notifier",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "description": "Posts to Slack when someone joins the Discord virtual office voice channel",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "build": "rolldown -c",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
     "lint": "oxlint",
-    "lint:fix": "oxlint --fix"
+    "lint:fix": "oxlint --fix",
+    "prepare": "effect-tsgo patch --typescript"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "packageManager": "pnpm@10.15.0",
   "dependencies": {
+    "@effect/platform-node": "4.0.0-rc.117",
+    "discord.js": "14.27.0",
     "effect": "4.0.0-rc.117"
   },
   "devDependencies": {
+    "@effect/tsgo": "0.45.0",
+    "@effect/vitest": "4.0.0-rc.117",
     "@oxlint/plugins": "1.85.0",
-    "oxlint": "1.85.0"
+    "@types/node": "26.6.2",
+    "oxlint": "1.85.0",
+    "rolldown": "1.2.11",
+    "typescript": "7.0.2",
+    "vitest": "5.0.1"
   },
-  "type": "module"
+  "type": "module",
+  "engines": {
+    "node": ">=26"
+  }
 }
