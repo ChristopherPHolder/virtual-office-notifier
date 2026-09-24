@@ -1,19 +1,18 @@
-import { type Cause, Context, Effect, Layer, Queue, Redacted, Schema, Stream } from "effect";
+import { type Cause, Context, Effect, Filter, Layer, Queue, Redacted, Schema, Stream } from "effect";
 import { Client, Events, GatewayIntentBits, type VoiceState } from "discord.js";
 
 import { DiscordConfig } from "./Config.ts";
-import { isOfficeJoin, toVoiceJoin, type VoiceJoin, type VoiceStateUpdate } from "./VoiceJoin.ts";
+import { type OfficeEvent, toOfficeEvent, type VoiceStateUpdate } from "./OfficeEvent.ts";
 
 export class DiscordLoginError extends Schema.TaggedError<DiscordLoginError>()("DiscordLoginError", {
   cause: Schema.Defect(),
 }) {}
 
-export const officeJoins =
+export const officeEvents =
   (officeChannelId: string) =>
-  <E, R>(updates: Stream.Stream<VoiceStateUpdate, E, R>): Stream.Stream<VoiceJoin, E, R> =>
+  <E, R>(updates: Stream.Stream<VoiceStateUpdate, E, R>): Stream.Stream<OfficeEvent, E, R> =>
     updates.pipe(
-      Stream.filter((update) => isOfficeJoin(officeChannelId, update)),
-      Stream.map((update) => toVoiceJoin(officeChannelId, update)),
+      Stream.filterMap(Filter.fromPredicateOption((update) => toOfficeEvent(officeChannelId, update))),
     );
 
 const toVoiceStateUpdate = (oldState: VoiceState, newState: VoiceState): VoiceStateUpdate => ({
@@ -50,7 +49,7 @@ const login = (client: Client, token: Redacted.Redacted<string>) =>
 export class DiscordGateway extends Context.Service<
   DiscordGateway,
   {
-    readonly voiceJoins: Stream.Stream<VoiceJoin>;
+    readonly officeEvents: Stream.Stream<OfficeEvent>;
   }
 >()("virtual-office-notifier/DiscordGateway") {
   static readonly layer = Layer.effect(
@@ -89,12 +88,12 @@ export class DiscordGateway extends Context.Service<
           ).pipe(Effect.annotateLogs({ officeChannelId, guilds: ready.guilds.cache.size }));
 
       return DiscordGateway.of({
-        voiceJoins: voiceStateUpdates(client).pipe(officeJoins(officeChannelId)),
+        officeEvents: voiceStateUpdates(client).pipe(officeEvents(officeChannelId)),
       });
     }),
   );
 
-  // Feeds the same join filter from a queue, so tests exercise everything but
+  // Feeds the same event filter from a queue, so tests exercise everything but
   // discord.js itself.
   static readonly layerTest = (updates: Queue.Dequeue<VoiceStateUpdate, Cause.Done>) =>
     Layer.effect(
@@ -103,7 +102,7 @@ export class DiscordGateway extends Context.Service<
         const { officeChannelId } = yield* DiscordConfig;
 
         return DiscordGateway.of({
-          voiceJoins: Stream.fromQueue(updates).pipe(officeJoins(officeChannelId)),
+          officeEvents: Stream.fromQueue(updates).pipe(officeEvents(officeChannelId)),
         });
       }),
     );

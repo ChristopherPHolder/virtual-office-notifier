@@ -10,7 +10,7 @@ import {
 
 import { SlackConfig } from "./Config.ts";
 import { formatMessage } from "./SlackMessage.ts";
-import type { VoiceJoin } from "./VoiceJoin.ts";
+import type { OfficeEvent } from "./OfficeEvent.ts";
 
 export class RateLimited extends Schema.TaggedError<RateLimited>()("RateLimited", {
   retryAfter: Schema.Duration,
@@ -129,7 +129,7 @@ export const retrySchedule = Schedule.exponential("1 second").pipe(
 export class SlackNotifier extends Context.Service<
   SlackNotifier,
   {
-    notify(join: VoiceJoin): Effect.Effect<void, SlackError>;
+    notify(event: OfficeEvent): Effect.Effect<void, SlackError>;
   }
 >()("virtual-office-notifier/SlackNotifier") {
   static readonly layerNoDeps = Layer.effect(
@@ -150,8 +150,8 @@ export class SlackNotifier extends Context.Service<
           Effect.flatMap(checkResponse),
         );
 
-      const notify = Effect.fn("SlackNotifier.notify")(function* (join: VoiceJoin) {
-        yield* post(formatMessage(join)).pipe(Effect.retry(retrySchedule));
+      const notify = Effect.fn("SlackNotifier.notify")(function* (event: OfficeEvent) {
+        yield* post(formatMessage(event)).pipe(Effect.retry(retrySchedule));
       });
 
       return SlackNotifier.of({ notify });

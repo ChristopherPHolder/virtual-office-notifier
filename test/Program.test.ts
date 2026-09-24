@@ -3,7 +3,7 @@ import { type Cause, Effect, Layer, Logger, type LogLevel, Queue, References } f
 
 import { DiscordGateway } from "../src/DiscordGateway.ts";
 import { MainLayer, program } from "../src/Program.ts";
-import type { VoiceStateUpdate } from "../src/VoiceJoin.ts";
+import type { VoiceStateUpdate } from "../src/OfficeEvent.ts";
 import { makeFakeSlack, ok, type Reply, respond, WEBHOOK_URL, withEnv } from "./fakes.ts";
 
 const OFFICE = "office";
@@ -126,20 +126,50 @@ describe("program", () => {
       assert.strictEqual(failure?.message, "Slack rejected the post");
       assert.deepInclude(failure?.annotations, { reason: "WebhookRevoked", userId: "u1" });
 
-      const success = logs.find((entry) => entry.message === "Announced office join");
-      assert.deepInclude(success?.annotations, { outcome: "posted", userId: "u2" });
+      const success = logs.find((entry) => entry.message === "Announced office event");
+      assert.deepInclude(success?.annotations, { event: "Joined", outcome: "posted", userId: "u2" });
     }));
 
-  it.effect("posts joins in the order they arrive", () =>
+  it.effect("announces disconnecting from the office", () =>
+    Effect.gen(function* () {
+      const { posted } = yield* runProgram([update({ oldChannelId: OFFICE, newChannelId: null })]);
+
+      assert.deepStrictEqual(posted, ["👋 *Ada* left the virtual office"]);
+    }));
+
+  it.effect("announces moving out of the office to another voice channel", () =>
+    Effect.gen(function* () {
+      const { posted } = yield* runProgram([update({ oldChannelId: OFFICE, newChannelId: "lobby" })]);
+
+      assert.deepStrictEqual(posted, ["👋 *Ada* left the virtual office"]);
+    }));
+
+  it.effect("ignores bots leaving the office", () =>
+    Effect.gen(function* () {
+      const { posted } = yield* runProgram([update({ oldChannelId: OFFICE, newChannelId: null, isBot: true })]);
+
+      assert.deepStrictEqual(posted, []);
+    }));
+
+  it.effect("ignores leaving other voice channels", () =>
+    Effect.gen(function* () {
+      const { posted } = yield* runProgram([update({ oldChannelId: "lobby", newChannelId: null })]);
+
+      assert.deepStrictEqual(posted, []);
+    }));
+
+  it.effect("posts joins and leaves in the order they arrive", () =>
     Effect.gen(function* () {
       const { posted } = yield* runProgram([
         update({ displayName: "Ada" }),
         update({ displayName: "Grace" }),
+        update({ displayName: "Ada", oldChannelId: OFFICE, newChannelId: null }),
       ]);
 
-      assert.strictEqual(posted.length, 2);
-      assert.include(posted[0], "Ada");
-      assert.include(posted[1], "Grace");
+      assert.strictEqual(posted.length, 3);
+      assert.include(posted[0], "*Ada* joined");
+      assert.include(posted[1], "*Grace* joined");
+      assert.include(posted[2], "*Ada* left");
     }));
 });
 

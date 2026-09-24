@@ -8,16 +8,16 @@ import {
 } from "effect/unstable/http";
 
 import { SlackNotifier } from "../src/SlackNotifier.ts";
-import type { VoiceJoin } from "../src/VoiceJoin.ts";
+import { OfficeEvent } from "../src/OfficeEvent.ts";
 
 export const WEBHOOK_URL = "https://hooks.slack.com/services/TEST/WEBHOOK/secret";
 
-export const join: VoiceJoin = {
+export const join = OfficeEvent.Joined({
   userId: "u1",
   displayName: "Ada",
   guildId: "g1",
   channelId: "c1",
-};
+});
 
 export type Reply = (
   request: HttpClientRequest.HttpClientRequest,

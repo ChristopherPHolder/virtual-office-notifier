@@ -9,7 +9,7 @@ const logSlackError = (error: SlackError) =>
     : Effect.logError("Slack rejected the post", error.reason)
   ).pipe(Effect.annotateLogs({ outcome: "failed", reason: error.reason._tag }));
 
-// Joins are handled one at a time, so a join that arrives during a retry waits
+// Events are handled one at a time, so one that arrives during a retry waits
 // its turn and messages stay in order.
 export const program = Effect.gen(function* () {
   const gateway = yield* DiscordGateway;
@@ -17,11 +17,11 @@ export const program = Effect.gen(function* () {
 
   yield* Effect.logInfo("Watching the virtual office");
 
-  yield* Stream.runForEach(gateway.voiceJoins, (join) =>
-    slack.notify(join).pipe(
-      Effect.andThen(Effect.logInfo("Announced office join").pipe(Effect.annotateLogs({ outcome: "posted" }))),
+  yield* Stream.runForEach(gateway.officeEvents, (event) =>
+    slack.notify(event).pipe(
+      Effect.andThen(Effect.logInfo("Announced office event").pipe(Effect.annotateLogs({ outcome: "posted" }))),
       Effect.catchTag("SlackError", logSlackError),
-      Effect.annotateLogs({ userId: join.userId }),
+      Effect.annotateLogs({ event: event._tag, userId: event.userId }),
     ),
   );
 });

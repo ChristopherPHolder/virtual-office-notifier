@@ -1,10 +1,12 @@
 # Virtual Office Notifier
 
-Posts a message in Slack when someone joins our Discord "virtual office" voice channel, so people know someone is there and can jump in:
+Posts a message in Slack when someone joins or leaves our Discord "virtual office" voice channel, so people know who is there and can jump in:
 
 > 🎙️ **Ada** joined the virtual office — [join them](#)
+>
+> 👋 **Ada** left the virtual office
 
-It only watches the one office channel, only announces joins (including moves in from another voice channel), and ignores bots. See [issue #1](https://github.com/ChristopherPHolder/virtual-office-notifier/issues/1) for the full design.
+It only watches the one office channel and ignores bots. Moving in from another voice channel counts as joining, and moving out counts as leaving. Mute, deafen and video changes are ignored. See [issue #1](https://github.com/ChristopherPHolder/virtual-office-notifier/issues/1) for the original design.
 
 ## How it works
 
