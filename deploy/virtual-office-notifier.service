@@ -1,0 +1,26 @@
+[Unit]
+Description=Virtual office notifier (Discord voice joins to Slack)
+Wants=network-online.target
+After=network-online.target
+# Give up after 5 failed starts in 10 minutes, so a bad token doesn't keep
+# hammering Discord's login endpoint.
+StartLimitIntervalSec=600
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=notifier
+Group=notifier
+WorkingDirectory=/opt/virtual-office-notifier
+EnvironmentFile=/etc/virtual-office-notifier.env
+ExecStart=/usr/bin/node --enable-source-maps /opt/virtual-office-notifier/main.js
+Restart=always
+RestartSec=30s
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+
+[Install]
+WantedBy=multi-user.target
