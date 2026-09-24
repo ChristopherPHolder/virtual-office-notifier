@@ -76,12 +76,17 @@ export class DiscordGateway extends Context.Service<
       const office = ready.channels.cache.get(officeChannelId);
 
       yield* Effect.logInfo("Connected to Discord").pipe(
-        Effect.annotateLogs({
-          user: ready.user.tag,
-          officeChannelId,
-          officeChannel: office !== undefined && "name" in office ? office.name : "not found",
-        }),
+        Effect.annotateLogs({ user: ready.user.tag, guilds: ready.guilds.cache.size }),
       );
+
+      // Keep running either way: the bot may be added to the server later.
+      yield* office?.isVoiceBased()
+        ? Effect.logInfo("Found the office voice channel").pipe(
+            Effect.annotateLogs({ officeChannelId, officeChannel: office.name }),
+          )
+        : Effect.logWarning(
+            "Office voice channel not found. Check DISCORD_OFFICE_CHANNEL_ID and that the bot is in the server and can view the channel.",
+          ).pipe(Effect.annotateLogs({ officeChannelId, guilds: ready.guilds.cache.size }));
 
       return DiscordGateway.of({
         voiceJoins: voiceStateUpdates(client).pipe(officeJoins(officeChannelId)),
