@@ -1,13 +1,6 @@
 import { assert, describe, it } from "@effect/vitest";
-import { ConfigProvider, Effect, Fiber, Layer, Ref } from "effect";
+import { Effect, Fiber } from "effect";
 import { TestClock } from "effect/testing";
-import {
-  HttpBody,
-  HttpClient,
-  HttpClientError,
-  type HttpClientRequest,
-  HttpClientResponse,
-} from "effect/unstable/http";
 
 import {
   InvalidPayload,
@@ -16,62 +9,28 @@ import {
   Unavailable,
   WebhookRevoked,
 } from "../src/SlackNotifier.ts";
-import type { VoiceJoin } from "../src/VoiceJoin.ts";
+import {
+  hang,
+  join,
+  makeFakeSlack,
+  networkDown,
+  ok,
+  type Reply,
+  requestText,
+  respond,
+  WEBHOOK_URL,
+  withEnv,
+} from "./fakes.ts";
 
-const WEBHOOK_URL = "https://hooks.slack.com/services/TEST/WEBHOOK/secret";
-
-const join: VoiceJoin = {
-  userId: "u1",
-  displayName: "Ada",
-  guildId: "g1",
-  channelId: "c1",
-};
-
-type Reply = (
-  request: HttpClientRequest.HttpClientRequest,
-) => Effect.Effect<HttpClientResponse.HttpClientResponse, HttpClientError.HttpClientError>;
-
-const respond =
-  (status: number, body: string, headers: Record<string, string> = {}): Reply =>
-  (request) =>
-    Effect.succeed(HttpClientResponse.fromWeb(request, new Response(body, { status, headers })));
-
-const ok = respond(200, "ok");
-
-const networkDown: Reply = (request) =>
-  Effect.fail(
-    new HttpClientError.HttpClientError({
-      reason: new HttpClientError.TransportError({
-        request,
-        description: "connect ECONNREFUSED",
-      }),
-    }),
-  );
-
-const hang: Reply = () => Effect.never;
-
-const requestText = (request: HttpClientRequest.HttpClientRequest): string =>
-  request.body instanceof HttpBody.Uint8Array ? new TextDecoder().decode(request.body.body) : "";
-
-// Serves the scripted replies in order, repeating the last one, and records
-// every request so tests can count attempts.
 const makeSlack = Effect.fnUntraced(function* (replies: ReadonlyArray<Reply>) {
-  const requests = yield* Ref.make<ReadonlyArray<HttpClientRequest.HttpClientRequest>>([]);
+  const fake = yield* makeFakeSlack(replies);
 
-  const client = HttpClient.make((request) =>
-    Ref.modify(requests, (sent) => [sent.length, [...sent, request]]).pipe(
-      Effect.flatMap((index) => (replies[index] ?? replies.at(-1) ?? ok)(request)),
-    ),
+  const notifier = yield* Effect.service(SlackNotifier).pipe(
+    Effect.provide(fake.layer),
+    withEnv({ SLACK_WEBHOOK_URL: WEBHOOK_URL }),
   );
 
-  const layer = SlackNotifier.layerNoDeps.pipe(
-    Layer.provide(Layer.succeed(HttpClient.HttpClient, client)),
-    Layer.provide(ConfigProvider.layer(ConfigProvider.fromEnv({ env: { SLACK_WEBHOOK_URL: WEBHOOK_URL } }))),
-  );
-
-  const notifier = yield* Effect.service(SlackNotifier).pipe(Effect.provide(layer));
-
-  return { notifier, requests: Ref.get(requests) };
+  return { notifier, requests: fake.requests };
 });
 
 describe("SlackNotifier", () => {
