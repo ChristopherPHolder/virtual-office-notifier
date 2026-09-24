@@ -10,5 +10,7 @@ export default defineConfig({
     file: "dist/main.js",
     format: "esm",
     sourcemap: true,
+    // discord.js and undici use dynamic imports; keep everything in one file.
+    codeSplitting: false,
   },
 });

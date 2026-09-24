@@ -4,6 +4,8 @@
   "description": "Posts to Slack when someone joins the Discord virtual office voice channel",
   "scripts": {
     "build": "rolldown -c",
+    "start": "node --env-file=.env --enable-source-maps dist/main.js",
+    "dev": "node --env-file=.env src/main.ts",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "lint": "oxlint",

@@ -1,4 +1,4 @@
-import { Context, Effect, Layer, Queue, Redacted, Schema, Stream } from "effect";
+import { type Cause, Context, Effect, Layer, Queue, Redacted, Schema, Stream } from "effect";
 import { Client, Events, GatewayIntentBits, type VoiceState } from "discord.js";
 
 import { DiscordConfig } from "./Config.ts";
@@ -91,7 +91,7 @@ export class DiscordGateway extends Context.Service<
 
   // Feeds the same join filter from a queue, so tests exercise everything but
   // discord.js itself.
-  static readonly layerTest = (updates: Queue.Dequeue<VoiceStateUpdate>) =>
+  static readonly layerTest = (updates: Queue.Dequeue<VoiceStateUpdate, Cause.Done>) =>
     Layer.effect(
       DiscordGateway,
       Effect.gen(function* () {
