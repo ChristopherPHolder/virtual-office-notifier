@@ -1,4 +1,4 @@
-import { ConfigProvider, Effect, Layer, Ref } from "effect";
+import { ConfigProvider, DateTime, Effect, Layer, Random, Ref } from "effect";
 import {
   HttpBody,
   HttpClient,
@@ -15,8 +15,16 @@ export const WEBHOOK_URL = "https://hooks.slack.com/services/TEST/WEBHOOK/secret
 export const opened = OfficeEvent.Opened({
   userId: "u1",
   displayName: "Ada",
+  avatarUrl: "https://cdn.discordapp.com/avatars/u1/a.png",
   guildId: "g1",
   channelId: "c1",
+  at: DateTime.makeUnsafe(0),
+});
+
+// Always picks the first phrasing, so tests can assert exact text.
+export const firstVariant = Effect.provideService(Random.Random, {
+  nextIntUnsafe: () => 0,
+  nextDoubleUnsafe: () => 0,
 });
 
 export type Reply = (
@@ -64,6 +72,7 @@ export const makeFakeSlack = Effect.fnUntraced(function* (replies: ReadonlyArray
     postedTexts: Ref.get(requests).pipe(
       Effect.map((sent) => sent.map((request) => JSON.parse(requestText(request)).text)),
     ),
+    postedBodies: Ref.get(requests).pipe(Effect.map((sent) => sent.map((request) => JSON.parse(requestText(request))))),
   };
 });
 

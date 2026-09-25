@@ -5,7 +5,7 @@ import { TestClock } from "effect/testing";
 import { DiscordGateway } from "../src/DiscordGateway.ts";
 import { MainLayer, program } from "../src/Program.ts";
 import type { VoiceStateUpdate } from "../src/OfficeEvent.ts";
-import { makeFakeSlack, ok, type Reply, respond, WEBHOOK_URL, withEnv } from "./fakes.ts";
+import { firstVariant, makeFakeSlack, ok, type Reply, respond, WEBHOOK_URL, withEnv } from "./fakes.ts";
 
 const OFFICE = "office";
 
@@ -20,6 +20,7 @@ const env = {
 const update = (overrides: Partial<VoiceStateUpdate> = {}): VoiceStateUpdate => ({
   userId: "u1",
   displayName: "Ada",
+  avatarUrl: "https://cdn.discordapp.com/avatars/u1/a.png",
   guildId: GUILD,
   oldChannelId: null,
   newChannelId: OFFICE,
@@ -65,14 +66,15 @@ const runProgram = Effect.fnUntraced(function* (
   yield* program.pipe(
     Effect.provide(Layer.mergeAll(DiscordGateway.layerTest(queue, new Set(occupants)), slack.layer, Logger.layer([captureLogs]))),
     withEnv(env),
+    firstVariant,
   );
 
-  return { posted: yield* slack.postedTexts, logs };
+  return { posted: yield* slack.postedTexts, bodies: yield* slack.postedBodies, logs };
 });
 
-const OPENED = `🎙️ *Ada* opened the virtual office — everyone's welcome to <https://discord.com/channels/${GUILD}/${OFFICE}|join>!`;
+const OPENED = "🎙️ *Ada* opened the virtual office — everyone's welcome to join!";
 
-const EMPTIED = `🪑 The virtual office is empty right now — <https://discord.com/channels/${GUILD}/${OFFICE}|jump in> and get it going!`;
+const EMPTIED = "🪑 The virtual office is empty right now — jump in and get it going!";
 
 const leave = (overrides: Partial<VoiceStateUpdate> = {}) =>
   update({ oldChannelId: OFFICE, newChannelId: null, ...overrides });
@@ -83,6 +85,16 @@ describe("program", () => {
       const { posted } = yield* runProgram([update({ oldChannelId: null })]);
 
       assert.deepStrictEqual(posted, [OPENED]);
+    }));
+
+  it.effect("posts a card with a join button and a recap when the office empties", () =>
+    Effect.gen(function* () {
+      const { bodies } = yield* runProgram([update(), update({ userId: "u2" }), leave({ userId: "u2" }), leave()]);
+
+      const cards = JSON.stringify(bodies);
+      assert.include(cards, `"url":"https://discord.com/channels/${GUILD}/${OFFICE}"`);
+      assert.include(cards, `"image_url":"https://cdn.discordapp.com/avatars/u1/a.png"`);
+      assert.include(cards, "*Stopped by*\\n2 people");
     }));
 
   it.effect("2. announces the office opening on a move in from another voice channel", () =>
@@ -180,6 +192,7 @@ describe("daily reminder", () => {
       const fiber = yield* program.pipe(
         Effect.provide(Layer.merge(DiscordGateway.layerTest(queue), slack.layer)),
         withEnv(env),
+        firstVariant,
         Effect.forkChild,
       );
 
@@ -189,7 +202,7 @@ describe("daily reminder", () => {
       yield* Fiber.join(fiber);
 
       assert.deepStrictEqual(yield* slack.postedTexts, [
-        `⏰ Daily reminder: come hang out in the virtual office — <https://discord.com/channels/${GUILD}/${OFFICE}|join> us!`,
+        "⏰ Daily reminder: come hang out in the virtual office!",
       ]);
     }));
 });

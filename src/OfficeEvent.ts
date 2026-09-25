@@ -1,4 +1,4 @@
-import { Data } from "effect";
+import { Data, DateTime, type Duration, Option } from "effect";
 
 // Where the office voice channel lives, enough to build a join link.
 export interface OfficeLocation {
@@ -9,14 +9,24 @@ export interface OfficeLocation {
 export interface OfficeMember extends OfficeLocation {
   readonly userId: string;
   readonly displayName: string;
+  // Null when Discord didn't send the member with the update.
+  readonly avatarUrl: string | null;
+}
+
+// How a session went, for the message when the office empties.
+export interface SessionRecap {
+  readonly duration: Duration.Duration;
+  readonly visitors: number;
 }
 
 // Only the edges of a session are announced: the first person in opens the
 // office, and the last person out leaves it empty. Reminders come from a
 // schedule rather than from Discord.
 export type OfficeEvent = Data.TaggedEnum<{
-  Opened: OfficeMember;
-  Emptied: OfficeMember;
+  Opened: OfficeMember & { readonly at: DateTime.Utc };
+  // No recap when the session was already under way at startup, since we
+  // missed how it started.
+  Emptied: OfficeMember & { readonly at: DateTime.Utc; readonly recap: Option.Option<SessionRecap> };
   Reminder: OfficeLocation;
 }>;
 
@@ -45,42 +55,82 @@ export const isOfficeLeave = (officeChannelId: string, change: VoiceStateChange)
 export interface VoiceStateUpdate extends VoiceStateChange {
   readonly userId: string;
   readonly displayName: string;
+  readonly avatarUrl: string | null;
   readonly guildId: string;
 }
+
+// A voice state update stamped with when it arrived.
+export type TimedVoiceStateUpdate = VoiceStateUpdate & { readonly at: DateTime.Utc };
 
 // User IDs of the people currently in the office, bots excluded.
 export type Occupants = ReadonlySet<string>;
 
-const unchanged = (occupants: Occupants): readonly [Occupants, ReadonlyArray<OfficeEvent>] => [occupants, []];
+export interface OfficeSession {
+  readonly occupants: Occupants;
+  // Everyone who has been in since the office opened, including who's in now.
+  readonly visitors: ReadonlySet<string>;
+  // None while the office is empty, or when the session started before we did.
+  readonly openedAt: Option.Option<DateTime.Utc>;
+}
 
-// Steps the office occupancy by one voice state update. A join or leave we have
+// Whoever is in at startup joined before we were watching, so their session
+// gets no recap.
+export const sessionOf = (occupants: Occupants): OfficeSession => ({
+  occupants,
+  visitors: occupants,
+  openedAt: Option.none(),
+});
+
+const unchanged = (session: OfficeSession): readonly [OfficeSession, ReadonlyArray<OfficeEvent>] => [session, []];
+
+// Steps the office session by one voice state update. A join or leave we have
 // already accounted for (e.g. a duplicate event) changes nothing.
 export const trackOccupancy =
   (officeChannelId: string) =>
-  (occupants: Occupants, update: VoiceStateUpdate): readonly [Occupants, ReadonlyArray<OfficeEvent>] => {
+  (
+    session: OfficeSession,
+    update: TimedVoiceStateUpdate,
+  ): readonly [OfficeSession, ReadonlyArray<OfficeEvent>] => {
+    const { occupants } = session;
+
     const member: OfficeMember = {
       userId: update.userId,
       displayName: update.displayName,
+      avatarUrl: update.avatarUrl,
       guildId: update.guildId,
       channelId: officeChannelId,
     };
 
     if (isOfficeJoin(officeChannelId, update)) {
-      if (occupants.has(update.userId)) return unchanged(occupants);
+      if (occupants.has(update.userId)) return unchanged(session);
 
       const next = new Set(occupants).add(update.userId);
 
-      return [next, occupants.size === 0 ? [OfficeEvent.Opened(member)] : []];
+      if (occupants.size === 0) {
+        return [
+          { occupants: next, visitors: new Set([update.userId]), openedAt: Option.some(update.at) },
+          [OfficeEvent.Opened({ ...member, at: update.at })],
+        ];
+      }
+
+      return [{ ...session, occupants: next, visitors: new Set(session.visitors).add(update.userId) }, []];
     }
 
     if (isOfficeLeave(officeChannelId, update)) {
-      if (!occupants.has(update.userId)) return unchanged(occupants);
+      if (!occupants.has(update.userId)) return unchanged(session);
 
       const next = new Set(occupants);
       next.delete(update.userId);
 
-      return [next, next.size === 0 ? [OfficeEvent.Emptied(member)] : []];
+      if (next.size > 0) return [{ ...session, occupants: next }, []];
+
+      const recap = Option.map(session.openedAt, (openedAt) => ({
+        duration: DateTime.distance(openedAt, update.at),
+        visitors: session.visitors.size,
+      }));
+
+      return [sessionOf(next), [OfficeEvent.Emptied({ ...member, at: update.at, recap })]];
     }
 
-    return unchanged(occupants);
+    return unchanged(session);
   };

@@ -1,5 +1,5 @@
 import { NodeHttpClient } from "@effect/platform-node";
-import { Context, Duration, Effect, Layer, Match, Option, Redacted, Schedule, Schema } from "effect";
+import { Context, Duration, Effect, Layer, Match, Option, Random, Redacted, Schedule, Schema } from "effect";
 import {
   Headers,
   HttpClient,
@@ -9,7 +9,7 @@ import {
 } from "effect/unstable/http";
 
 import { SlackConfig } from "./Config.ts";
-import { formatMessage } from "./SlackMessage.ts";
+import { formatMessage, type SlackMessage } from "./SlackMessage.ts";
 import type { OfficeEvent } from "./OfficeEvent.ts";
 
 export class RateLimited extends Schema.TaggedError<RateLimited>()("RateLimited", {
@@ -138,9 +138,9 @@ export class SlackNotifier extends Context.Service<
       const { webhookUrl } = yield* SlackConfig;
       const client = yield* HttpClient.HttpClient;
 
-      const post = (text: string) =>
+      const post = (message: SlackMessage) =>
         HttpClientRequest.post(Redacted.value(webhookUrl)).pipe(
-          HttpClientRequest.bodyJsonUnsafe({ text }),
+          HttpClientRequest.bodyJsonUnsafe(message),
           client.execute,
           Effect.timeout("10 seconds"),
           Effect.catchTags({
@@ -151,7 +151,10 @@ export class SlackNotifier extends Context.Service<
         );
 
       const notify = Effect.fn("SlackNotifier.notify")(function* (event: OfficeEvent) {
-        yield* post(formatMessage(event)).pipe(Effect.retry(retrySchedule));
+        // Picked once, so a retry posts the same wording.
+        const variant = yield* Random.nextInt;
+
+        yield* post(formatMessage(event, variant)).pipe(Effect.retry(retrySchedule));
       });
 
       return SlackNotifier.of({ notify });

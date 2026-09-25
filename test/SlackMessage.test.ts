@@ -1,9 +1,26 @@
+import { DateTime, Duration, Option } from "effect";
 import { describe, expect, it } from "vitest";
 
 import { OfficeEvent } from "../src/OfficeEvent.ts";
-import { escapeSlackText, formatMessage } from "../src/SlackMessage.ts";
+import { escapeSlackText, formatDuration, formatMessage } from "../src/SlackMessage.ts";
 
-const member = { userId: "u1", displayName: "Ada", guildId: "g1", channelId: "c1" };
+// 2026-09-25T14:05:00Z
+const at = DateTime.makeUnsafe(1_790_345_100_000);
+
+const member = {
+  userId: "u1",
+  displayName: "Ada",
+  avatarUrl: "https://cdn.discordapp.com/avatars/u1/a.png",
+  guildId: "g1",
+  channelId: "c1",
+  at,
+};
+
+const office = { guildId: "g1", channelId: "c1" };
+
+const JOIN_URL = "https://discord.com/channels/g1/c1";
+
+const TIME = "<!date^1790345100^{time}|14:05 UTC>";
 
 describe("escapeSlackText", () => {
   it("escapes Slack control characters", () => {
@@ -17,28 +34,116 @@ describe("escapeSlackText", () => {
   });
 });
 
+describe("formatDuration", () => {
+  it("rounds anything short down to under a minute", () => {
+    expect(formatDuration(Duration.seconds(59))).toBe("under a minute");
+  });
+
+  it("shows minutes, hours, or both", () => {
+    expect(formatDuration(Duration.minutes(14))).toBe("14m");
+    expect(formatDuration(Duration.hours(2))).toBe("2h");
+    expect(formatDuration(Duration.minutes(134))).toBe("2h 14m");
+  });
+
+  it("counts past a day in hours", () => {
+    expect(formatDuration(Duration.hours(26))).toBe("26h");
+  });
+});
+
 describe("formatMessage", () => {
-  it("names who opened the office and invites everyone to join", () => {
-    expect(formatMessage(OfficeEvent.Opened(member))).toBe(
-      "🎙️ *Ada* opened the virtual office — everyone's welcome to <https://discord.com/channels/g1/c1|join>!",
-    );
+  it("shows who opened the office with their avatar, a join button and the time", () => {
+    expect(formatMessage(OfficeEvent.Opened(member), 0)).toEqual({
+      text: "🎙️ *Ada* opened the virtual office — everyone's welcome to join!",
+      blocks: [
+        {
+          type: "section",
+          text: { type: "mrkdwn", text: "🎙️ *Ada* opened the virtual office — everyone's welcome to join!" },
+          accessory: { type: "image", image_url: member.avatarUrl, alt_text: "Ada" },
+        },
+        {
+          type: "actions",
+          elements: [
+            {
+              type: "button",
+              text: { type: "plain_text", text: "🎧 Join the office", emoji: true },
+              url: JOIN_URL,
+              style: "primary",
+            },
+          ],
+        },
+        { type: "context", elements: [{ type: "mrkdwn", text: `🔊 Opened on Discord at ${TIME}` }] },
+      ],
+    });
   });
 
-  it("invites people to join when the office empties", () => {
-    expect(formatMessage(OfficeEvent.Emptied(member))).toBe(
-      "🪑 The virtual office is empty right now — <https://discord.com/channels/g1/c1|jump in> and get it going!",
-    );
+  it("leaves the avatar out when Discord didn't send one", () => {
+    const [headline] = formatMessage(OfficeEvent.Opened({ ...member, avatarUrl: null }), 0).blocks;
+
+    expect(headline).not.toHaveProperty("accessory");
   });
 
-  it("links to the office in the daily reminder", () => {
-    expect(formatMessage(OfficeEvent.Reminder({ guildId: "g1", channelId: "c1" }))).toBe(
-      "⏰ Daily reminder: come hang out in the virtual office — <https://discord.com/channels/g1/c1|join> us!",
+  it("recaps the session when the office empties", () => {
+    const message = formatMessage(
+      OfficeEvent.Emptied({
+        ...member,
+        recap: Option.some({ duration: Duration.minutes(134), visitors: 5 }),
+      }),
+      0,
     );
+
+    expect(message.text).toBe("🪑 The virtual office is empty right now — jump in and get it going!");
+    expect(message.blocks).toContainEqual({
+      type: "section",
+      fields: [
+        { type: "mrkdwn", text: "*Open for*\n2h 14m" },
+        { type: "mrkdwn", text: "*Stopped by*\n5 people" },
+      ],
+    });
+    expect(message.blocks.at(-1)).toEqual({
+      type: "context",
+      elements: [{ type: "mrkdwn", text: `🔇 Emptied at ${TIME}` }],
+    });
   });
 
-  it("escapes the display name", () => {
-    expect(formatMessage(OfficeEvent.Opened({ ...member, displayName: "<!here>" }))).toContain(
-      "*&lt;!here&gt;*",
+  it("says person, not people, for a solo session", () => {
+    const message = formatMessage(
+      OfficeEvent.Emptied({ ...member, recap: Option.some({ duration: Duration.minutes(5), visitors: 1 }) }),
+      0,
     );
+
+    expect(JSON.stringify(message.blocks)).toContain("1 person");
+  });
+
+  it("skips the recap when the session started before the bot did", () => {
+    const message = formatMessage(OfficeEvent.Emptied({ ...member, recap: Option.none() }), 0);
+
+    expect(JSON.stringify(message.blocks)).not.toContain("Open for");
+  });
+
+  it("links the reminder to the office", () => {
+    const message = formatMessage(OfficeEvent.Reminder(office), 0);
+
+    expect(message.text).toBe("⏰ Daily reminder: come hang out in the virtual office!");
+    expect(JSON.stringify(message.blocks)).toContain(JOIN_URL);
+  });
+
+  it("varies the wording and wraps around the phrasings", () => {
+    const texts = [0, 1, 2, 3].map((variant) => formatMessage(OfficeEvent.Reminder(office), variant).text);
+
+    expect(new Set(texts).size).toBe(3);
+    expect(texts[3]).toBe(texts[0]);
+  });
+
+  it("copes with a negative variant", () => {
+    expect(formatMessage(OfficeEvent.Reminder(office), -1).text).toBeTypeOf("string");
+  });
+
+  it("escapes the display name in every phrasing", () => {
+    for (const variant of [0, 1, 2]) {
+      const message = formatMessage(OfficeEvent.Opened({ ...member, displayName: "<!here>" }), variant);
+
+      expect(message.text).toContain("*&lt;!here&gt;*");
+      expect(message.blocks[0]).toMatchObject({ text: { text: message.text } });
+    }
   });
 });

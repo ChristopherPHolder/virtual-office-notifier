@@ -1,8 +1,15 @@
-import { type Cause, Context, Effect, Layer, Option, Queue, Redacted, Schema, Stream } from "effect";
+import { type Cause, Context, DateTime, Effect, Layer, Option, Queue, Redacted, Schema, Stream } from "effect";
 import { Client, Events, GatewayIntentBits, type VoiceState } from "discord.js";
 
 import { DiscordConfig } from "./Config.ts";
-import { type OfficeEvent, type OfficeLocation, type Occupants, trackOccupancy, type VoiceStateUpdate } from "./OfficeEvent.ts";
+import {
+  type OfficeEvent,
+  type OfficeLocation,
+  type Occupants,
+  sessionOf,
+  trackOccupancy,
+  type VoiceStateUpdate,
+} from "./OfficeEvent.ts";
 
 export class DiscordLoginError extends Schema.TaggedError<DiscordLoginError>()("DiscordLoginError", {
   cause: Schema.Defect(),
@@ -11,11 +18,16 @@ export class DiscordLoginError extends Schema.TaggedError<DiscordLoginError>()("
 export const officeEvents =
   (officeChannelId: string, occupants: Occupants) =>
   <E, R>(updates: Stream.Stream<VoiceStateUpdate, E, R>): Stream.Stream<OfficeEvent, E, R> =>
-    updates.pipe(Stream.mapAccum(() => occupants, trackOccupancy(officeChannelId)));
+    updates.pipe(
+      Stream.mapEffect((update) => DateTime.now.pipe(Effect.map((at) => ({ ...update, at })))),
+      Stream.mapAccum(() => sessionOf(occupants), trackOccupancy(officeChannelId)),
+    );
 
 const toVoiceStateUpdate = (oldState: VoiceState, newState: VoiceState): VoiceStateUpdate => ({
   userId: newState.id,
   displayName: newState.member?.displayName ?? newState.id,
+  // Slack can't show Discord's default WebP avatars.
+  avatarUrl: newState.member?.displayAvatarURL({ extension: "png", size: 128 }) ?? null,
   guildId: newState.guild.id,
   oldChannelId: oldState.channelId,
   newChannelId: newState.channelId,

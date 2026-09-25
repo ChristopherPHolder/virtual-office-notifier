@@ -1,5 +1,5 @@
 import { assert, describe, it } from "@effect/vitest";
-import { Effect, Fiber } from "effect";
+import { Effect, Fiber, Random } from "effect";
 import { TestClock } from "effect/testing";
 
 import {
@@ -9,7 +9,9 @@ import {
   Unavailable,
   WebhookRevoked,
 } from "../src/SlackNotifier.ts";
+import { formatMessage } from "../src/SlackMessage.ts";
 import {
+  firstVariant,
   hang,
   makeFakeSlack,
   networkDown,
@@ -38,14 +40,25 @@ describe("SlackNotifier", () => {
     Effect.gen(function* () {
       const slack = yield* makeSlack([ok]);
 
-      yield* slack.notifier.notify(opened);
+      yield* slack.notifier.notify(opened).pipe(firstVariant);
 
       const requests = yield* slack.requests;
       assert.strictEqual(requests.length, 1);
       assert.strictEqual(requests[0]?.url, WEBHOOK_URL);
-      assert.deepStrictEqual(JSON.parse(requestText(requests[0]!)), {
-        text: "🎙️ *Ada* opened the virtual office — everyone's welcome to <https://discord.com/channels/g1/c1|join>!",
-      });
+      assert.deepStrictEqual(JSON.parse(requestText(requests[0]!)), formatMessage(opened, 0));
+    }));
+
+  it.effect("posts the same wording on every retry", () =>
+    Effect.gen(function* () {
+      const slack = yield* makeSlack([respond(503, ""), ok]);
+
+      const fiber = yield* slack.notifier.notify(opened).pipe(Random.withSeed("retry"), Effect.forkChild);
+
+      yield* TestClock.adjust("2 seconds");
+      yield* Fiber.join(fiber);
+
+      const [first, second] = (yield* slack.requests).map(requestText);
+      assert.strictEqual(first, second);
     }));
 
   it.effect("fails without retrying when the webhook is revoked", () =>
