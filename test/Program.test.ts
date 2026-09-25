@@ -16,7 +16,7 @@ const env = {
   SLACK_WEBHOOK_URL: WEBHOOK_URL,
 };
 
-const update = (overrides: Partial<VoiceStateUpdate>): VoiceStateUpdate => ({
+const update = (overrides: Partial<VoiceStateUpdate> = {}): VoiceStateUpdate => ({
   userId: "u1",
   displayName: "Ada",
   guildId: GUILD,
@@ -32,11 +32,13 @@ interface LogEntry {
   readonly annotations: Readonly<Record<string, string>>;
 }
 
-// Runs the program over the given voice state updates until the queue ends, and
-// returns what was posted to Slack and what was logged.
+// Runs the program over the given voice state updates until the queue ends,
+// starting with `occupants` already in the office, and returns what was posted
+// to Slack and what was logged.
 const runProgram = Effect.fnUntraced(function* (
   updates: ReadonlyArray<VoiceStateUpdate>,
   replies: ReadonlyArray<Reply> = [ok],
+  occupants: ReadonlyArray<string> = [],
 ) {
   const queue = yield* Queue.unbounded<VoiceStateUpdate, Cause.Done>();
 
@@ -60,47 +62,55 @@ const runProgram = Effect.fnUntraced(function* (
   });
 
   yield* program.pipe(
-    Effect.provide(Layer.mergeAll(DiscordGateway.layerTest(queue), slack.layer, Logger.layer([captureLogs]))),
+    Effect.provide(Layer.mergeAll(DiscordGateway.layerTest(queue, new Set(occupants)), slack.layer, Logger.layer([captureLogs]))),
     withEnv(env),
   );
 
   return { posted: yield* slack.postedTexts, logs };
 });
 
+const OPENED = `🎙️ *Ada* opened the virtual office — everyone's welcome to <https://discord.com/channels/${GUILD}/${OFFICE}|join>!`;
+
+const CLOSED = "👋 The virtual office is closed for now — see you soon!";
+
+const leave = (overrides: Partial<VoiceStateUpdate> = {}) =>
+  update({ oldChannelId: OFFICE, newChannelId: null, ...overrides });
+
 describe("program", () => {
-  it.effect("1. announces a join from outside voice with name and join link", () =>
+  it.effect("1. announces the first join from outside voice with name and join link", () =>
     Effect.gen(function* () {
       const { posted } = yield* runProgram([update({ oldChannelId: null })]);
 
-      assert.deepStrictEqual(posted, [
-        `🎙️ *Ada* joined the virtual office — <https://discord.com/channels/${GUILD}/${OFFICE}|join them>`,
-      ]);
+      assert.deepStrictEqual(posted, [OPENED]);
     }));
 
-  it.effect("2. announces a move in from another voice channel", () =>
+  it.effect("2. announces the office opening on a move in from another voice channel", () =>
     Effect.gen(function* () {
       const { posted } = yield* runProgram([update({ oldChannelId: "lobby" })]);
 
-      assert.strictEqual(posted.length, 1);
+      assert.deepStrictEqual(posted, [OPENED]);
     }));
 
   it.effect("3. ignores mute, deafen and video changes inside the office", () =>
     Effect.gen(function* () {
-      const { posted } = yield* runProgram([update({ oldChannelId: OFFICE, newChannelId: OFFICE })]);
+      const { posted } = yield* runProgram([update({ oldChannelId: OFFICE, newChannelId: OFFICE })], [ok], ["u1"]);
 
       assert.deepStrictEqual(posted, []);
     }));
 
-  it.effect("4. ignores bots joining the office", () =>
+  it.effect("4. ignores bots joining and leaving the office", () =>
     Effect.gen(function* () {
-      const { posted } = yield* runProgram([update({ isBot: true })]);
+      const { posted } = yield* runProgram([update({ isBot: true }), leave({ isBot: true })]);
 
       assert.deepStrictEqual(posted, []);
     }));
 
-  it.effect("5. ignores joins to other voice channels", () =>
+  it.effect("5. ignores other voice channels", () =>
     Effect.gen(function* () {
-      const { posted } = yield* runProgram([update({ newChannelId: "lobby" })]);
+      const { posted } = yield* runProgram([
+        update({ newChannelId: "lobby" }),
+        update({ oldChannelId: "lobby", newChannelId: null }),
+      ]);
 
       assert.deepStrictEqual(posted, []);
     }));
@@ -113,63 +123,50 @@ describe("program", () => {
       assert.notInclude(posted[0], "<!channel>");
     }));
 
-  it.effect("8. logs a revoked webhook as an error and keeps handling joins", () =>
+  it.effect("7. only announces the office opening and closing, not everyone in between", () =>
     Effect.gen(function* () {
-      const { posted, logs } = yield* runProgram(
-        [update({ userId: "u1" }), update({ userId: "u2", displayName: "Grace" })],
-        [respond(404, "no_service"), ok],
-      );
+      const { posted } = yield* runProgram([
+        update({ userId: "u1", displayName: "Ada" }),
+        update({ userId: "u2", displayName: "Grace" }),
+        leave({ userId: "u1", displayName: "Ada" }),
+        update({ userId: "u3", displayName: "Linus" }),
+        leave({ userId: "u2", displayName: "Grace" }),
+        leave({ userId: "u3", displayName: "Linus", newChannelId: "lobby" }),
+      ]);
+
+      assert.deepStrictEqual(posted, [OPENED, CLOSED]);
+    }));
+
+  it.effect("8. logs a revoked webhook as an error and keeps handling events", () =>
+    Effect.gen(function* () {
+      const { posted, logs } = yield* runProgram([update(), leave()], [respond(404, "no_service"), ok]);
 
       assert.strictEqual(posted.length, 2);
 
       const failure = logs.find((entry) => entry.level === "Error");
       assert.strictEqual(failure?.message, "Slack rejected the post");
-      assert.deepInclude(failure?.annotations, { reason: "WebhookRevoked", userId: "u1" });
+      assert.deepInclude(failure?.annotations, { reason: "WebhookRevoked", event: "Opened", userId: "u1" });
 
       const success = logs.find((entry) => entry.message === "Announced office event");
-      assert.deepInclude(success?.annotations, { event: "Joined", outcome: "posted", userId: "u2" });
+      assert.deepInclude(success?.annotations, { event: "Closed", outcome: "posted", userId: "u1" });
     }));
 
-  it.effect("announces disconnecting from the office", () =>
+  it.effect("reopens the office after it closed", () =>
     Effect.gen(function* () {
-      const { posted } = yield* runProgram([update({ oldChannelId: OFFICE, newChannelId: null })]);
+      const { posted } = yield* runProgram([update(), leave(), update()]);
 
-      assert.deepStrictEqual(posted, ["👋 *Ada* left the virtual office"]);
+      assert.deepStrictEqual(posted, [OPENED, CLOSED, OPENED]);
     }));
 
-  it.effect("announces moving out of the office to another voice channel", () =>
+  it.effect("doesn't announce opening when people were already in the office at startup", () =>
     Effect.gen(function* () {
-      const { posted } = yield* runProgram([update({ oldChannelId: OFFICE, newChannelId: "lobby" })]);
+      const { posted } = yield* runProgram(
+        [update({ userId: "u2", displayName: "Grace" }), leave({ userId: "u2" }), leave({ userId: "u1" })],
+        [ok],
+        ["u1"],
+      );
 
-      assert.deepStrictEqual(posted, ["👋 *Ada* left the virtual office"]);
-    }));
-
-  it.effect("ignores bots leaving the office", () =>
-    Effect.gen(function* () {
-      const { posted } = yield* runProgram([update({ oldChannelId: OFFICE, newChannelId: null, isBot: true })]);
-
-      assert.deepStrictEqual(posted, []);
-    }));
-
-  it.effect("ignores leaving other voice channels", () =>
-    Effect.gen(function* () {
-      const { posted } = yield* runProgram([update({ oldChannelId: "lobby", newChannelId: null })]);
-
-      assert.deepStrictEqual(posted, []);
-    }));
-
-  it.effect("posts joins and leaves in the order they arrive", () =>
-    Effect.gen(function* () {
-      const { posted } = yield* runProgram([
-        update({ displayName: "Ada" }),
-        update({ displayName: "Grace" }),
-        update({ displayName: "Ada", oldChannelId: OFFICE, newChannelId: null }),
-      ]);
-
-      assert.strictEqual(posted.length, 3);
-      assert.include(posted[0], "*Ada* joined");
-      assert.include(posted[1], "*Grace* joined");
-      assert.include(posted[2], "*Ada* left");
+      assert.deepStrictEqual(posted, [CLOSED]);
     }));
 });
 

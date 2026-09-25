@@ -18,21 +18,20 @@ describe("escapeSlackText", () => {
 });
 
 describe("formatMessage", () => {
-  it("names the member who joined and links to the channel", () => {
-    expect(formatMessage(OfficeEvent.Joined(member))).toBe(
-      "🎙️ *Ada* joined the virtual office — <https://discord.com/channels/g1/c1|join them>",
+  it("names who opened the office and invites everyone to join", () => {
+    expect(formatMessage(OfficeEvent.Opened(member))).toBe(
+      "🎙️ *Ada* opened the virtual office — everyone's welcome to <https://discord.com/channels/g1/c1|join>!",
     );
   });
 
-  it("names the member who left", () => {
-    expect(formatMessage(OfficeEvent.Left(member))).toBe("👋 *Ada* left the virtual office");
+  it("says goodbye when the office closes", () => {
+    expect(formatMessage(OfficeEvent.Closed(member))).toBe(
+      "👋 The virtual office is closed for now — see you soon!",
+    );
   });
 
   it("escapes the display name", () => {
-    expect(formatMessage(OfficeEvent.Joined({ ...member, displayName: "<!here>" }))).toContain(
-      "*&lt;!here&gt;*",
-    );
-    expect(formatMessage(OfficeEvent.Left({ ...member, displayName: "<!here>" }))).toContain(
+    expect(formatMessage(OfficeEvent.Opened({ ...member, displayName: "<!here>" }))).toContain(
       "*&lt;!here&gt;*",
     );
   });

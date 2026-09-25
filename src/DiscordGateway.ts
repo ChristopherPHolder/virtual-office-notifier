@@ -1,19 +1,17 @@
-import { type Cause, Context, Effect, Filter, Layer, Queue, Redacted, Schema, Stream } from "effect";
+import { type Cause, Context, Effect, Layer, Queue, Redacted, Schema, Stream } from "effect";
 import { Client, Events, GatewayIntentBits, type VoiceState } from "discord.js";
 
 import { DiscordConfig } from "./Config.ts";
-import { type OfficeEvent, toOfficeEvent, type VoiceStateUpdate } from "./OfficeEvent.ts";
+import { type OfficeEvent, type Occupants, trackOccupancy, type VoiceStateUpdate } from "./OfficeEvent.ts";
 
 export class DiscordLoginError extends Schema.TaggedError<DiscordLoginError>()("DiscordLoginError", {
   cause: Schema.Defect(),
 }) {}
 
 export const officeEvents =
-  (officeChannelId: string) =>
+  (officeChannelId: string, occupants: Occupants) =>
   <E, R>(updates: Stream.Stream<VoiceStateUpdate, E, R>): Stream.Stream<OfficeEvent, E, R> =>
-    updates.pipe(
-      Stream.filterMap(Filter.fromPredicateOption((update) => toOfficeEvent(officeChannelId, update))),
-    );
+    updates.pipe(Stream.mapAccum(() => occupants, trackOccupancy(officeChannelId)));
 
 const toVoiceStateUpdate = (oldState: VoiceState, newState: VoiceState): VoiceStateUpdate => ({
   userId: newState.id,
@@ -78,31 +76,40 @@ export class DiscordGateway extends Context.Service<
         Effect.annotateLogs({ user: ready.user.tag, guilds: ready.guilds.cache.size }),
       );
 
+      // Seeded from the voice states Discord sends on connect, so restarting while
+      // people are in the office doesn't announce it opening again.
+      const occupants: Occupants = new Set(
+        office?.isVoiceBased() ? office.members.filter((member) => !member.user.bot).keys() : [],
+      );
+
       // Keep running either way: the bot may be added to the server later.
       yield* office?.isVoiceBased()
         ? Effect.logInfo("Found the office voice channel").pipe(
-            Effect.annotateLogs({ officeChannelId, officeChannel: office.name }),
+            Effect.annotateLogs({ officeChannelId, officeChannel: office.name, occupants: occupants.size }),
           )
         : Effect.logWarning(
             "Office voice channel not found. Check DISCORD_OFFICE_CHANNEL_ID and that the bot is in the server and can view the channel.",
           ).pipe(Effect.annotateLogs({ officeChannelId, guilds: ready.guilds.cache.size }));
 
       return DiscordGateway.of({
-        officeEvents: voiceStateUpdates(client).pipe(officeEvents(officeChannelId)),
+        officeEvents: voiceStateUpdates(client).pipe(officeEvents(officeChannelId, occupants)),
       });
     }),
   );
 
-  // Feeds the same event filter from a queue, so tests exercise everything but
+  // Feeds the same occupancy tracking from a queue, so tests exercise everything but
   // discord.js itself.
-  static readonly layerTest = (updates: Queue.Dequeue<VoiceStateUpdate, Cause.Done>) =>
+  static readonly layerTest = (
+    updates: Queue.Dequeue<VoiceStateUpdate, Cause.Done>,
+    occupants: Occupants = new Set(),
+  ) =>
     Layer.effect(
       DiscordGateway,
       Effect.gen(function* () {
         const { officeChannelId } = yield* DiscordConfig;
 
         return DiscordGateway.of({
-          officeEvents: Stream.fromQueue(updates).pipe(officeEvents(officeChannelId)),
+          officeEvents: Stream.fromQueue(updates).pipe(officeEvents(officeChannelId, occupants)),
         });
       }),
     );

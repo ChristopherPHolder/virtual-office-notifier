@@ -1,8 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { Option } from "effect";
-
-import { isOfficeJoin, isOfficeLeave, OfficeEvent, toOfficeEvent } from "../src/OfficeEvent.ts";
+import { isOfficeJoin, isOfficeLeave, OfficeEvent, trackOccupancy } from "../src/OfficeEvent.ts";
 
 const OFFICE = "office";
 
@@ -76,25 +74,41 @@ describe("isOfficeLeave", () => {
   });
 });
 
-describe("toOfficeEvent", () => {
+describe("trackOccupancy", () => {
+  const step = trackOccupancy(OFFICE);
   const update = { userId: "u1", displayName: "Ada", guildId: "g1", isBot: false };
   const member = { userId: "u1", displayName: "Ada", guildId: "g1", channelId: OFFICE };
+  const join = { ...update, oldChannelId: null, newChannelId: OFFICE };
+  const leave = { ...update, oldChannelId: OFFICE, newChannelId: "lobby" };
 
-  it("maps a join", () => {
-    expect(toOfficeEvent(OFFICE, { ...update, oldChannelId: null, newChannelId: OFFICE })).toEqual(
-      Option.some(OfficeEvent.Joined(member)),
-    );
+  it("opens the office when the first person joins", () => {
+    expect(step(new Set(), join)).toEqual([new Set(["u1"]), [OfficeEvent.Opened(member)]]);
   });
 
-  it("maps a leave to the office channel", () => {
-    expect(toOfficeEvent(OFFICE, { ...update, oldChannelId: OFFICE, newChannelId: "lobby" })).toEqual(
-      Option.some(OfficeEvent.Left(member)),
-    );
+  it("stays quiet when someone joins an occupied office", () => {
+    expect(step(new Set(["u2"]), join)).toEqual([new Set(["u2", "u1"]), []]);
   });
 
-  it("drops everything else", () => {
-    expect(toOfficeEvent(OFFICE, { ...update, oldChannelId: OFFICE, newChannelId: OFFICE })).toEqual(
-      Option.none(),
-    );
+  it("closes the office when the last person leaves", () => {
+    expect(step(new Set(["u1"]), leave)).toEqual([new Set(), [OfficeEvent.Closed(member)]]);
+  });
+
+  it("stays quiet when someone leaves and others remain", () => {
+    expect(step(new Set(["u1", "u2"]), leave)).toEqual([new Set(["u2"]), []]);
+  });
+
+  it("ignores a duplicate join", () => {
+    expect(step(new Set(["u1"]), join)).toEqual([new Set(["u1"]), []]);
+  });
+
+  it("ignores a leave from someone it never saw join", () => {
+    expect(step(new Set(), leave)).toEqual([new Set(), []]);
+  });
+
+  it("ignores changes inside the office", () => {
+    expect(step(new Set(["u1"]), { ...update, oldChannelId: OFFICE, newChannelId: OFFICE })).toEqual([
+      new Set(["u1"]),
+      [],
+    ]);
   });
 });

@@ -11,9 +11,9 @@ import {
 } from "../src/SlackNotifier.ts";
 import {
   hang,
-  join,
   makeFakeSlack,
   networkDown,
+  opened,
   ok,
   type Reply,
   requestText,
@@ -38,13 +38,13 @@ describe("SlackNotifier", () => {
     Effect.gen(function* () {
       const slack = yield* makeSlack([ok]);
 
-      yield* slack.notifier.notify(join);
+      yield* slack.notifier.notify(opened);
 
       const requests = yield* slack.requests;
       assert.strictEqual(requests.length, 1);
       assert.strictEqual(requests[0]?.url, WEBHOOK_URL);
       assert.deepStrictEqual(JSON.parse(requestText(requests[0]!)), {
-        text: "🎙️ *Ada* joined the virtual office — <https://discord.com/channels/g1/c1|join them>",
+        text: "🎙️ *Ada* opened the virtual office — everyone's welcome to <https://discord.com/channels/g1/c1|join>!",
       });
     }));
 
@@ -52,7 +52,7 @@ describe("SlackNotifier", () => {
     Effect.gen(function* () {
       const slack = yield* makeSlack([respond(404, "no_service")]);
 
-      const { reason } = yield* slack.notifier.notify(join).pipe(Effect.flip);
+      const { reason } = yield* slack.notifier.notify(opened).pipe(Effect.flip);
 
       assert.instanceOf(reason, WebhookRevoked);
       assert.strictEqual(reason.status, 404);
@@ -64,7 +64,7 @@ describe("SlackNotifier", () => {
     Effect.gen(function* () {
       const slack = yield* makeSlack([respond(400, "invalid_payload")]);
 
-      const { reason } = yield* slack.notifier.notify(join).pipe(Effect.flip);
+      const { reason } = yield* slack.notifier.notify(opened).pipe(Effect.flip);
 
       assert.instanceOf(reason, InvalidPayload);
       assert.strictEqual((yield* slack.requests).length, 1);
@@ -74,7 +74,7 @@ describe("SlackNotifier", () => {
     Effect.gen(function* () {
       const slack = yield* makeSlack([respond(429, "", { "retry-after": "5" }), ok]);
 
-      const fiber = yield* slack.notifier.notify(join).pipe(Effect.forkChild);
+      const fiber = yield* slack.notifier.notify(opened).pipe(Effect.forkChild);
 
       yield* TestClock.adjust("4 seconds");
       assert.strictEqual((yield* slack.requests).length, 1);
@@ -88,7 +88,7 @@ describe("SlackNotifier", () => {
     Effect.gen(function* () {
       const slack = yield* makeSlack([respond(503, "")]);
 
-      const fiber = yield* slack.notifier.notify(join).pipe(Effect.flip, Effect.forkChild);
+      const fiber = yield* slack.notifier.notify(opened).pipe(Effect.flip, Effect.forkChild);
 
       yield* TestClock.adjust("1 minute");
       const { reason } = yield* Fiber.join(fiber);
@@ -102,7 +102,7 @@ describe("SlackNotifier", () => {
     Effect.gen(function* () {
       const slack = yield* makeSlack([respond(503, "")]);
 
-      yield* slack.notifier.notify(join).pipe(Effect.ignore, Effect.forkChild);
+      yield* slack.notifier.notify(opened).pipe(Effect.ignore, Effect.forkChild);
 
       // Jitter keeps the first delay within 0.8s-1.2s.
       yield* TestClock.adjust("790 millis");
@@ -116,14 +116,14 @@ describe("SlackNotifier", () => {
     Effect.gen(function* () {
       const slack = yield* makeSlack([networkDown, ok]);
 
-      const fiber = yield* slack.notifier.notify(join).pipe(Effect.forkChild);
+      const fiber = yield* slack.notifier.notify(opened).pipe(Effect.forkChild);
 
       yield* TestClock.adjust("2 seconds");
       yield* Fiber.join(fiber);
       assert.strictEqual((yield* slack.requests).length, 2);
 
       const failed = yield* makeSlack([networkDown]);
-      const failedFiber = yield* failed.notifier.notify(join).pipe(Effect.flip, Effect.forkChild);
+      const failedFiber = yield* failed.notifier.notify(opened).pipe(Effect.flip, Effect.forkChild);
 
       yield* TestClock.adjust("1 minute");
       const error = yield* Fiber.join(failedFiber);
@@ -137,7 +137,7 @@ describe("SlackNotifier", () => {
     Effect.gen(function* () {
       const slack = yield* makeSlack([hang, ok]);
 
-      const fiber = yield* slack.notifier.notify(join).pipe(Effect.forkChild);
+      const fiber = yield* slack.notifier.notify(opened).pipe(Effect.forkChild);
 
       yield* TestClock.adjust("9 seconds");
       assert.strictEqual((yield* slack.requests).length, 1);

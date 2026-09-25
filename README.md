@@ -1,10 +1,12 @@
 # Virtual Office Notifier
 
-Posts a message in Slack when someone joins or leaves our Discord "virtual office" voice channel, so people know who is there and can jump in:
+Posts a message in Slack when our Discord "virtual office" voice channel opens or closes, so people know when they can jump in:
 
-> 🎙️ **Ada** joined the virtual office — [join them](#)
+> 🎙️ **Ada** opened the virtual office — everyone's welcome to [join](#)!
 >
-> 👋 **Ada** left the virtual office
+> 👋 The virtual office is closed for now — see you soon!
+
+The office opens when the first person joins an empty channel and closes when the last person leaves. Joins and leaves in between aren't announced, to keep the Slack channel quiet. On startup it counts whoever is already in the channel, so a restart mid-session doesn't announce the office opening again.
 
 It only watches the one office channel and ignores bots. Moving in from another voice channel counts as joining, and moving out counts as leaving. Mute, deafen and video changes are ignored. See [issue #1](https://github.com/ChristopherPHolder/virtual-office-notifier/issues/1) for the original design.
 
@@ -55,7 +57,7 @@ TypeScript is pinned to the exact version `@effect/tsgo` supports; upgrade the t
 
 ## Deployment
 
-Runs on a GCP Always Free `e2-micro` VM under systemd. There must be exactly one running copy, otherwise every join is posted twice.
+Runs on a GCP Always Free `e2-micro` VM under systemd. There must be exactly one running copy, otherwise every announcement is posted twice.
 
 ### First-time VM setup
 

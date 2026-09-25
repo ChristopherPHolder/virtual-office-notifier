@@ -1,7 +1,7 @@
 {
   "name": "virtual-office-notifier",
   "version": "1.0.0",
-  "description": "Posts to Slack when someone joins the Discord virtual office voice channel",
+  "description": "Posts to Slack when the Discord virtual office voice channel opens or closes",
   "scripts": {
     "build": "rolldown -c",
     "start": "node --env-file=.env --enable-source-maps dist/main.js",

@@ -12,7 +12,7 @@ import { OfficeEvent } from "../src/OfficeEvent.ts";
 
 export const WEBHOOK_URL = "https://hooks.slack.com/services/TEST/WEBHOOK/secret";
 
-export const join = OfficeEvent.Joined({
+export const opened = OfficeEvent.Opened({
   userId: "u1",
   displayName: "Ada",
   guildId: "g1",

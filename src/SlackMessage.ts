@@ -9,7 +9,7 @@ export const joinLink = (member: OfficeMember): string =>
   `https://discord.com/channels/${member.guildId}/${member.channelId}`;
 
 export const formatMessage = OfficeEvent.$match({
-  Joined: (member) =>
-    `🎙️ *${escapeSlackText(member.displayName)}* joined the virtual office — <${joinLink(member)}|join them>`,
-  Left: (member) => `👋 *${escapeSlackText(member.displayName)}* left the virtual office`,
+  Opened: (member) =>
+    `🎙️ *${escapeSlackText(member.displayName)}* opened the virtual office — everyone's welcome to <${joinLink(member)}|join>!`,
+  Closed: () => "👋 The virtual office is closed for now — see you soon!",
 });

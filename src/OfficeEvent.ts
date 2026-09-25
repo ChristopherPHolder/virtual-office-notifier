@@ -1,4 +1,4 @@
-import { Data, Option } from "effect";
+import { Data } from "effect";
 
 export interface OfficeMember {
   readonly userId: string;
@@ -7,9 +7,11 @@ export interface OfficeMember {
   readonly channelId: string;
 }
 
+// Only the edges of a session are announced: the first person in opens the
+// office, the last person out closes it.
 export type OfficeEvent = Data.TaggedEnum<{
-  Joined: OfficeMember;
-  Left: OfficeMember;
+  Opened: OfficeMember;
+  Closed: OfficeMember;
 }>;
 
 export const OfficeEvent = Data.taggedEnum<OfficeEvent>();
@@ -40,20 +42,39 @@ export interface VoiceStateUpdate extends VoiceStateChange {
   readonly guildId: string;
 }
 
-export const toOfficeEvent = (
-  officeChannelId: string,
-  update: VoiceStateUpdate,
-): Option.Option<OfficeEvent> => {
-  const member: OfficeMember = {
-    userId: update.userId,
-    displayName: update.displayName,
-    guildId: update.guildId,
-    channelId: officeChannelId,
+// User IDs of the people currently in the office, bots excluded.
+export type Occupants = ReadonlySet<string>;
+
+const unchanged = (occupants: Occupants): readonly [Occupants, ReadonlyArray<OfficeEvent>] => [occupants, []];
+
+// Steps the office occupancy by one voice state update. A join or leave we have
+// already accounted for (e.g. a duplicate event) changes nothing.
+export const trackOccupancy =
+  (officeChannelId: string) =>
+  (occupants: Occupants, update: VoiceStateUpdate): readonly [Occupants, ReadonlyArray<OfficeEvent>] => {
+    const member: OfficeMember = {
+      userId: update.userId,
+      displayName: update.displayName,
+      guildId: update.guildId,
+      channelId: officeChannelId,
+    };
+
+    if (isOfficeJoin(officeChannelId, update)) {
+      if (occupants.has(update.userId)) return unchanged(occupants);
+
+      const next = new Set(occupants).add(update.userId);
+
+      return [next, occupants.size === 0 ? [OfficeEvent.Opened(member)] : []];
+    }
+
+    if (isOfficeLeave(officeChannelId, update)) {
+      if (!occupants.has(update.userId)) return unchanged(occupants);
+
+      const next = new Set(occupants);
+      next.delete(update.userId);
+
+      return [next, next.size === 0 ? [OfficeEvent.Closed(member)] : []];
+    }
+
+    return unchanged(occupants);
   };
-
-  if (isOfficeJoin(officeChannelId, update)) return Option.some(OfficeEvent.Joined(member));
-
-  if (isOfficeLeave(officeChannelId, update)) return Option.some(OfficeEvent.Left(member));
-
-  return Option.none();
-};
