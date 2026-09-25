@@ -89,8 +89,8 @@ describe("trackOccupancy", () => {
     expect(step(new Set(["u2"]), join)).toEqual([new Set(["u2", "u1"]), []]);
   });
 
-  it("closes the office when the last person leaves", () => {
-    expect(step(new Set(["u1"]), leave)).toEqual([new Set(), [OfficeEvent.Closed(member)]]);
+  it("reports the office empty when the last person leaves", () => {
+    expect(step(new Set(["u1"]), leave)).toEqual([new Set(), [OfficeEvent.Emptied(member)]]);
   });
 
   it("stays quiet when someone leaves and others remain", () => {

@@ -1,6 +1,8 @@
-import { Effect, Layer, Stream } from "effect";
+import { Effect, Layer, Option, Stream } from "effect";
 
 import { DiscordGateway } from "./DiscordGateway.ts";
+import { OfficeEvent } from "./OfficeEvent.ts";
+import { reminders } from "./Reminder.ts";
 import { isRetryable, type SlackError, SlackNotifier } from "./SlackNotifier.ts";
 
 const logSlackError = (error: SlackError) =>
@@ -8,6 +10,12 @@ const logSlackError = (error: SlackError) =>
     ? Effect.logWarning("Gave up posting to Slack after retries", error.reason)
     : Effect.logError("Slack rejected the post", error.reason)
   ).pipe(Effect.annotateLogs({ outcome: "failed", reason: error.reason._tag }));
+
+const eventAnnotations = OfficeEvent.$match({
+  Opened: ({ userId }) => ({ event: "Opened", userId }),
+  Emptied: ({ userId }) => ({ event: "Emptied", userId }),
+  Reminder: () => ({ event: "Reminder" }),
+});
 
 // Events are handled one at a time, so one that arrives during a retry waits
 // its turn and messages stay in order.
@@ -17,11 +25,18 @@ export const program = Effect.gen(function* () {
 
   yield* Effect.logInfo("Watching the virtual office");
 
-  yield* Stream.runForEach(gateway.officeEvents, (event) =>
+  // The reminders never end, so the program runs as long as the Discord events do.
+  const events = gateway.officeEvents.pipe(
+    Stream.merge(Option.match(gateway.office, { onNone: () => Stream.empty, onSome: reminders }), {
+      haltStrategy: "left",
+    }),
+  );
+
+  yield* Stream.runForEach(events, (event) =>
     slack.notify(event).pipe(
       Effect.andThen(Effect.logInfo("Announced office event").pipe(Effect.annotateLogs({ outcome: "posted" }))),
       Effect.catchTag("SlackError", logSlackError),
-      Effect.annotateLogs({ event: event._tag, userId: event.userId }),
+      Effect.annotateLogs(eventAnnotations(event)),
     ),
   );
 });

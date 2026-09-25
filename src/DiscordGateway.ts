@@ -1,8 +1,8 @@
-import { type Cause, Context, Effect, Layer, Queue, Redacted, Schema, Stream } from "effect";
+import { type Cause, Context, Effect, Layer, Option, Queue, Redacted, Schema, Stream } from "effect";
 import { Client, Events, GatewayIntentBits, type VoiceState } from "discord.js";
 
 import { DiscordConfig } from "./Config.ts";
-import { type OfficeEvent, type Occupants, trackOccupancy, type VoiceStateUpdate } from "./OfficeEvent.ts";
+import { type OfficeEvent, type OfficeLocation, type Occupants, trackOccupancy, type VoiceStateUpdate } from "./OfficeEvent.ts";
 
 export class DiscordLoginError extends Schema.TaggedError<DiscordLoginError>()("DiscordLoginError", {
   cause: Schema.Defect(),
@@ -48,6 +48,8 @@ export class DiscordGateway extends Context.Service<
   DiscordGateway,
   {
     readonly officeEvents: Stream.Stream<OfficeEvent>;
+    // None when the office channel wasn't found at startup.
+    readonly office: Option.Option<OfficeLocation>;
   }
 >()("virtual-office-notifier/DiscordGateway") {
   static readonly layer = Layer.effect(
@@ -93,6 +95,9 @@ export class DiscordGateway extends Context.Service<
 
       return DiscordGateway.of({
         officeEvents: voiceStateUpdates(client).pipe(officeEvents(officeChannelId, occupants)),
+        office: office?.isVoiceBased()
+          ? Option.some({ guildId: office.guild.id, channelId: officeChannelId })
+          : Option.none(),
       });
     }),
   );
@@ -102,6 +107,7 @@ export class DiscordGateway extends Context.Service<
   static readonly layerTest = (
     updates: Queue.Dequeue<VoiceStateUpdate, Cause.Done>,
     occupants: Occupants = new Set(),
+    guildId = "guild",
   ) =>
     Layer.effect(
       DiscordGateway,
@@ -110,6 +116,7 @@ export class DiscordGateway extends Context.Service<
 
         return DiscordGateway.of({
           officeEvents: Stream.fromQueue(updates).pipe(officeEvents(officeChannelId, occupants)),
+          office: Option.some({ guildId, channelId: officeChannelId }),
         });
       }),
     );

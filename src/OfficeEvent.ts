@@ -1,17 +1,23 @@
 import { Data } from "effect";
 
-export interface OfficeMember {
-  readonly userId: string;
-  readonly displayName: string;
+// Where the office voice channel lives, enough to build a join link.
+export interface OfficeLocation {
   readonly guildId: string;
   readonly channelId: string;
 }
 
+export interface OfficeMember extends OfficeLocation {
+  readonly userId: string;
+  readonly displayName: string;
+}
+
 // Only the edges of a session are announced: the first person in opens the
-// office, the last person out closes it.
+// office, and the last person out leaves it empty. Reminders come from a
+// schedule rather than from Discord.
 export type OfficeEvent = Data.TaggedEnum<{
   Opened: OfficeMember;
-  Closed: OfficeMember;
+  Emptied: OfficeMember;
+  Reminder: OfficeLocation;
 }>;
 
 export const OfficeEvent = Data.taggedEnum<OfficeEvent>();
@@ -73,7 +79,7 @@ export const trackOccupancy =
       const next = new Set(occupants);
       next.delete(update.userId);
 
-      return [next, next.size === 0 ? [OfficeEvent.Closed(member)] : []];
+      return [next, next.size === 0 ? [OfficeEvent.Emptied(member)] : []];
     }
 
     return unchanged(occupants);

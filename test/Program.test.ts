@@ -1,5 +1,6 @@
 import { assert, describe, it } from "@effect/vitest";
-import { type Cause, Effect, Layer, Logger, type LogLevel, Queue, References } from "effect";
+import { type Cause, Effect, Fiber, Layer, Logger, type LogLevel, Queue, References } from "effect";
+import { TestClock } from "effect/testing";
 
 import { DiscordGateway } from "../src/DiscordGateway.ts";
 import { MainLayer, program } from "../src/Program.ts";
@@ -71,7 +72,7 @@ const runProgram = Effect.fnUntraced(function* (
 
 const OPENED = `🎙️ *Ada* opened the virtual office — everyone's welcome to <https://discord.com/channels/${GUILD}/${OFFICE}|join>!`;
 
-const CLOSED = "👋 The virtual office is closed for now — see you soon!";
+const EMPTIED = `🪑 The virtual office is empty right now — <https://discord.com/channels/${GUILD}/${OFFICE}|jump in> and get it going!`;
 
 const leave = (overrides: Partial<VoiceStateUpdate> = {}) =>
   update({ oldChannelId: OFFICE, newChannelId: null, ...overrides });
@@ -123,7 +124,7 @@ describe("program", () => {
       assert.notInclude(posted[0], "<!channel>");
     }));
 
-  it.effect("7. only announces the office opening and closing, not everyone in between", () =>
+  it.effect("7. only announces the office opening and emptying, not everyone in between", () =>
     Effect.gen(function* () {
       const { posted } = yield* runProgram([
         update({ userId: "u1", displayName: "Ada" }),
@@ -134,7 +135,7 @@ describe("program", () => {
         leave({ userId: "u3", displayName: "Linus", newChannelId: "lobby" }),
       ]);
 
-      assert.deepStrictEqual(posted, [OPENED, CLOSED]);
+      assert.deepStrictEqual(posted, [OPENED, EMPTIED]);
     }));
 
   it.effect("8. logs a revoked webhook as an error and keeps handling events", () =>
@@ -148,14 +149,14 @@ describe("program", () => {
       assert.deepInclude(failure?.annotations, { reason: "WebhookRevoked", event: "Opened", userId: "u1" });
 
       const success = logs.find((entry) => entry.message === "Announced office event");
-      assert.deepInclude(success?.annotations, { event: "Closed", outcome: "posted", userId: "u1" });
+      assert.deepInclude(success?.annotations, { event: "Emptied", outcome: "posted", userId: "u1" });
     }));
 
-  it.effect("reopens the office after it closed", () =>
+  it.effect("reopens the office after it emptied", () =>
     Effect.gen(function* () {
       const { posted } = yield* runProgram([update(), leave(), update()]);
 
-      assert.deepStrictEqual(posted, [OPENED, CLOSED, OPENED]);
+      assert.deepStrictEqual(posted, [OPENED, EMPTIED, OPENED]);
     }));
 
   it.effect("doesn't announce opening when people were already in the office at startup", () =>
@@ -166,7 +167,30 @@ describe("program", () => {
         ["u1"],
       );
 
-      assert.deepStrictEqual(posted, [CLOSED]);
+      assert.deepStrictEqual(posted, [EMPTIED]);
+    }));
+});
+
+describe("daily reminder", () => {
+  it.effect("posts the reminder to Slack while watching the office", () =>
+    Effect.gen(function* () {
+      const queue = yield* Queue.unbounded<VoiceStateUpdate, Cause.Done>();
+      const slack = yield* makeFakeSlack([ok]);
+
+      const fiber = yield* program.pipe(
+        Effect.provide(Layer.merge(DiscordGateway.layerTest(queue), slack.layer)),
+        withEnv(env),
+        Effect.forkChild,
+      );
+
+      // The test clock starts on a Thursday, so the first reminder is at 09:15Z.
+      yield* TestClock.adjust("10 hours");
+      yield* Queue.end(queue);
+      yield* Fiber.join(fiber);
+
+      assert.deepStrictEqual(yield* slack.postedTexts, [
+        `⏰ Daily reminder: come hang out in the virtual office — <https://discord.com/channels/${GUILD}/${OFFICE}|join> us!`,
+      ]);
     }));
 });
 

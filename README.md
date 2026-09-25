@@ -1,12 +1,18 @@
 # Virtual Office Notifier
 
-Posts a message in Slack when our Discord "virtual office" voice channel opens or closes, so people know when they can jump in:
+Posts a message in Slack when someone opens our Discord "virtual office" voice channel or it empties out, so people know when they can jump in:
 
 > 🎙️ **Ada** opened the virtual office — everyone's welcome to [join](#)!
 >
-> 👋 The virtual office is closed for now — see you soon!
+> 🪑 The virtual office is empty right now — [jump in](#) and get it going!
 
-The office opens when the first person joins an empty channel and closes when the last person leaves. Joins and leaves in between aren't announced, to keep the Slack channel quiet. On startup it counts whoever is already in the channel, so a restart mid-session doesn't announce the office opening again.
+The office opens when the first person joins an empty channel and empties when the last person leaves. Joins and leaves in between aren't announced, to keep the Slack channel quiet. On startup it counts whoever is already in the channel, so a restart mid-session doesn't announce the office opening again.
+
+It also posts a daily reminder on weekdays at 11:15 UTC+2:
+
+> ⏰ Daily reminder: come hang out in the virtual office — [join](#) us!
+
+The reminder uses a fixed UTC+2 offset, so it doesn't shift with daylight saving. It's skipped if the office channel wasn't found at startup, since there's nothing to link to.
 
 It only watches the one office channel and ignores bots. Moving in from another voice channel counts as joining, and moving out counts as leaving. Mute, deafen and video changes are ignored. See [issue #1](https://github.com/ChristopherPHolder/virtual-office-notifier/issues/1) for the original design.
 

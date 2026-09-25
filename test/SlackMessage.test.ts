@@ -24,9 +24,15 @@ describe("formatMessage", () => {
     );
   });
 
-  it("says goodbye when the office closes", () => {
-    expect(formatMessage(OfficeEvent.Closed(member))).toBe(
-      "👋 The virtual office is closed for now — see you soon!",
+  it("invites people to join when the office empties", () => {
+    expect(formatMessage(OfficeEvent.Emptied(member))).toBe(
+      "🪑 The virtual office is empty right now — <https://discord.com/channels/g1/c1|jump in> and get it going!",
+    );
+  });
+
+  it("links to the office in the daily reminder", () => {
+    expect(formatMessage(OfficeEvent.Reminder({ guildId: "g1", channelId: "c1" }))).toBe(
+      "⏰ Daily reminder: come hang out in the virtual office — <https://discord.com/channels/g1/c1|join> us!",
     );
   });
 
