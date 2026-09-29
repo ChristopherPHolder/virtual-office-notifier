@@ -1,10 +1,16 @@
 import { NodeRuntime, NodeServices } from "@effect/platform-node";
-import { Config, Effect, Option, Schema } from "effect";
+import { Config, Effect, FileSystem, Option, Path, Redacted, Schema } from "effect";
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
+
+import { DiscordConfig, SlackConfig } from "../src/Config.ts";
 
 const APP_DIR = "/opt/virtual-office-notifier";
 
 const SERVICE = "virtual-office-notifier";
+
+const UNIT_FILE = `deploy/${SERVICE}.service`;
+
+const ENV_FILE = `${SERVICE}.env`;
 
 class DeployError extends Schema.TaggedError<DeployError>()("DeployError", {
   step: Schema.String,
@@ -31,47 +37,81 @@ const run = Effect.fnUntraced(function* (step: string, command: string, args: Re
   }
 });
 
+// Writes the service's environment file into a scoped temp directory, so the
+// secrets never land in the working tree and are deleted after the upload.
+const writeEnvFile = Effect.fnUntraced(function* () {
+  const fs = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
+  const discord = yield* DiscordConfig;
+  const slack = yield* SlackConfig;
+
+  const dir = yield* fs.makeTempDirectoryScoped({ prefix: `${SERVICE}-` });
+  const file = path.join(dir, ENV_FILE);
+
+  yield* fs.writeFileString(
+    file,
+    [
+      `DISCORD_BOT_TOKEN=${Redacted.value(discord.botToken)}`,
+      `DISCORD_OFFICE_CHANNEL_ID=${discord.officeChannelId}`,
+      `SLACK_WEBHOOK_URL=${Redacted.value(slack.webhookUrl)}`,
+      "",
+    ].join("\n"),
+    { mode: 0o600 },
+  );
+
+  return file;
+});
+
 const program = Effect.gen(function* () {
   const { instance, zone, project } = yield* DeployConfig;
 
+  // Fresh CI runners have no SSH key yet; --quiet generates one without
+  // prompting, and the expiry stops keys piling up on the VM.
   const target = [
     `--zone=${zone}`,
     ...Option.match(project, { onNone: () => [], onSome: (id) => [`--project=${id}`] }),
+    "--quiet",
+    "--ssh-key-expire-after=1h",
   ];
+
+  const envFile = yield* writeEnvFile();
 
   yield* run("Bundling", "pnpm", ["build"]);
 
-  yield* run("Copying bundle", "gcloud", [
+  yield* run("Uploading release", "gcloud", [
     "compute",
     "scp",
     ...target,
     "dist/main.js",
-    `${instance}:${APP_DIR}/main.js.new`,
-  ]);
-
-  yield* run("Copying source map", "gcloud", [
-    "compute",
-    "scp",
-    ...target,
     "dist/main.js.map",
-    `${instance}:${APP_DIR}/main.js.map.new`,
+    UNIT_FILE,
+    envFile,
+    `${instance}:~/`,
   ]);
 
-  yield* run("Restarting service", "gcloud", [
+  yield* run("Installing and restarting service", "gcloud", [
     "compute",
     "ssh",
     instance,
     ...target,
     "--command",
     [
-      `cd ${APP_DIR}`,
-      "mv main.js.map.new main.js.map",
-      "mv main.js.new main.js",
+      "set -eu",
+      `trap 'rm -f main.js main.js.map ${SERVICE}.service ${ENV_FILE}' EXIT`,
+      `sudo install -m 600 -o root -g root ${ENV_FILE} /etc/${ENV_FILE}`,
+      `sudo install -m 644 -o root -g root ${SERVICE}.service /etc/systemd/system/${SERVICE}.service`,
+      `sudo install -m 644 -o root -g root main.js main.js.map ${APP_DIR}/`,
+      "sudo systemctl daemon-reload",
+      `sudo systemctl enable ${SERVICE}`,
       `sudo systemctl restart ${SERVICE}`,
-    ].join(" && "),
+      // A bad token or missing variable crashes on startup; wait long enough
+      // to catch it so the deploy fails instead of silently restart-looping.
+      "sleep 15",
+      `systemctl is-active --quiet ${SERVICE} || { sudo journalctl -u ${SERVICE} -n 50 --no-pager; exit 1; }`,
+    ].join("\n"),
   ]);
 
   yield* Effect.logInfo(`Deployed. Logs: journalctl -u ${SERVICE} -f`);
 });
 
-program.pipe(Effect.provide(NodeServices.layer), NodeRuntime.runMain);
+program.pipe(Effect.scoped, Effect.provide(NodeServices.layer), NodeRuntime.runMain);

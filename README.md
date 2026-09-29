@@ -92,40 +92,50 @@ Runs on a GCP Always Free `e2-micro` VM under systemd. There must be exactly one
    sudo apt-get install -y nodejs
    ```
 
-3. Create the service user and app directory. Your SSH user deploys into it:
+3. Create the service user and app directory:
 
    ```bash
    sudo useradd --system --no-create-home --shell /usr/sbin/nologin notifier
    sudo mkdir -p /opt/virtual-office-notifier
-   sudo chown "$USER":notifier /opt/virtual-office-notifier
    ```
 
-4. Write the env file with the three variables above:
+The deploy writes the env file and installs the systemd unit, so there's nothing else to do on the VM. Set up CI below; the first deploy starts the service.
 
-   ```bash
-   sudo install -m 600 -o root -g root /dev/null /etc/virtual-office-notifier.env
-   sudo nano /etc/virtual-office-notifier.env
-   ```
+### Continuous deployment
 
-5. Install and enable the unit from `deploy/virtual-office-notifier.service`:
+Every push to `main` that passes the checks deploys from GitHub Actions (the `deploy` job in `.github/workflows/ci.yml`). It authenticates to GCP through Workload Identity Federation, so there's no service account key to leak, and only pushes to `main` on this repo can get a token.
 
-   ```bash
-   sudo tee /etc/systemd/system/virtual-office-notifier.service < virtual-office-notifier.service
-   sudo systemctl daemon-reload
-   sudo systemctl enable virtual-office-notifier
-   ```
-
-   Copy the unit file over first, e.g. `gcloud compute scp deploy/virtual-office-notifier.service virtual-office-notifier:~ --zone=us-central1-a`.
-
-Then run the first deploy below; it starts the service.
-
-### Deploying
+One-time setup, from the repo root with `gcloud` on the right project and `gh` logged in to the repo owner's account:
 
 ```bash
-node scripts/deploy.ts
+scripts/setup-ci.sh
 ```
 
-This bundles locally, copies `dist/main.js` and its source map to the VM, swaps them into place and restarts the service. Override the target with `DEPLOY_INSTANCE` (default `virtual-office-notifier`), `DEPLOY_ZONE` (default `us-central1-a`) and `DEPLOY_PROJECT` (default: your `gcloud` project).
+This creates a `github-deploy` service account, a Workload Identity pool trusting this repo's `main` branch, turns on OS Login for the VM and grants the account SSH and sudo there. It then stores these repository secrets:
+
+| Secret | Source |
+|---|---|
+| `GCP_WORKLOAD_IDENTITY_PROVIDER` | The Workload Identity provider created above |
+| `GCP_SERVICE_ACCOUNT` | The `github-deploy` service account email |
+| `DISCORD_BOT_TOKEN`, `DISCORD_OFFICE_CHANNEL_ID`, `SLACK_WEBHOOK_URL` | Your local `.env` |
+
+GitHub secrets are the source of truth for the app's configuration. To change a value, update the secret and re-run the latest `CI` workflow on `main`:
+
+```bash
+gh secret set SLACK_WEBHOOK_URL
+```
+
+### What a deploy does
+
+`scripts/deploy.ts` bundles the app, writes the env file from the three variables, copies `dist/main.js`, its source map, the systemd unit and the env file to the VM, installs them under `/opt/virtual-office-notifier` and `/etc`, reloads systemd and restarts the service. It then waits 15 seconds and fails, printing the last log lines, if the service isn't running.
+
+To deploy by hand from your machine:
+
+```bash
+node --env-file=.env scripts/deploy.ts
+```
+
+Override the target with `DEPLOY_INSTANCE` (default `virtual-office-notifier`), `DEPLOY_ZONE` (default `us-central1-a`) and `DEPLOY_PROJECT` (default: your `gcloud` project).
 
 ### Logs
 
