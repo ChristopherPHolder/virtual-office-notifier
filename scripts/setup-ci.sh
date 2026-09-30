@@ -46,6 +46,18 @@ for role in roles/compute.instanceAdmin.v1 roles/compute.osAdminLogin; do
     --project="$PROJECT_ID" --zone="$ZONE" --member="serviceAccount:$SA" --role="$role"
 done
 
+# gcloud compute ssh/scp read the project metadata to pick an SSH method. A
+# custom role grants just that, rather than project-wide osAdminLogin, which
+# would mean sudo on every VM in the project.
+gcloud iam roles create githubDeployProjectReader \
+  --project="$PROJECT_ID" --title="GitHub deploy project reader" \
+  --description="Lets gcloud compute ssh/scp read project metadata" \
+  --permissions=compute.projects.get --stage=GA
+
+gcloud projects add-iam-policy-binding "$PROJECT_ID" \
+  --member="serviceAccount:$SA" --role="projects/$PROJECT_ID/roles/githubDeployProjectReader" \
+  --condition=None
+
 # Logging in over OS Login to a VM with an attached service account requires
 # permission to act as that account.
 VM_SA=$(gcloud compute instances describe "$INSTANCE" \
