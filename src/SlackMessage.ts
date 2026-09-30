@@ -92,6 +92,17 @@ export const reminderHeadlines: Variants = [
   "🎲 Today's forecast: 100% chance of good company in the virtual office.",
 ];
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+// Counts Mondays to Fridays since the epoch, so consecutive weekdays get
+// consecutive numbers. A weekend day shares its number with the Monday after.
+export const weekdaysSinceEpoch = (at: DateTime.Utc): number => {
+  // The epoch was a Thursday; shifting by 3 lines the weeks up on Monday.
+  const days = Math.floor(DateTime.toEpochMillis(at) / DAY_MS) + 3;
+
+  return Math.floor(days / 7) * 5 + Math.min(days % 7, 5);
+};
+
 export const formatDuration = (duration: Duration.Duration): string => {
   const totalMinutes = Math.floor(Duration.toMinutes(duration));
 
@@ -148,6 +159,8 @@ const recapFields = (recap: SessionRecap): SectionBlock => ({
 });
 
 // `variant` picks one of the phrasings, so repeated posts don't all read the same.
+// Reminders ignore it and rotate by date instead, so every phrasing comes up
+// once before any repeats.
 export const formatMessage = (event: OfficeEvent, variant: number): SlackMessage =>
   OfficeEvent.$match(event, {
     Opened: (member) => {
@@ -177,7 +190,7 @@ export const formatMessage = (event: OfficeEvent, variant: number): SlackMessage
       };
     },
     Reminder: (office) => {
-      const text = pick(reminderHeadlines, variant);
+      const text = pick(reminderHeadlines, weekdaysSinceEpoch(office.at));
 
       return { text, blocks: [headline(text, Option.none()), joinButton(office, "🎧 Join the office")] };
     },

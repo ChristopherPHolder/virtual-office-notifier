@@ -1,5 +1,5 @@
 import { assert, describe, it } from "@effect/vitest";
-import { Clock, Effect, Fiber, Stream } from "effect";
+import { Clock, DateTime, Effect, Fiber, Stream } from "effect";
 import { TestClock } from "effect/testing";
 
 import { OfficeEvent } from "../src/OfficeEvent.ts";
@@ -25,7 +25,10 @@ describe("reminders", () => {
         fired.map(([, now]) => new Date(now).toISOString()),
         ["1970-01-01T09:15:00.000Z", "1970-01-02T09:15:00.000Z", "1970-01-05T09:15:00.000Z"],
       );
-      assert.deepStrictEqual(fired[0]?.[0], OfficeEvent.Reminder(office));
+      assert.deepStrictEqual(
+        fired[0]?.[0],
+        OfficeEvent.Reminder({ ...office, at: DateTime.makeUnsafe("1970-01-01T09:15:00Z") }),
+      );
     }));
 
   it.effect("stays quiet before the first reminder is due", () =>

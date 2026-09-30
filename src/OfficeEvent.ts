@@ -27,7 +27,7 @@ export type OfficeEvent = Data.TaggedEnum<{
   // No recap when the session was already under way at startup, since we
   // missed how it started.
   Emptied: OfficeMember & { readonly at: DateTime.Utc; readonly recap: Option.Option<SessionRecap> };
-  Reminder: OfficeLocation;
+  Reminder: OfficeLocation & { readonly at: DateTime.Utc };
 }>;
 
 export const OfficeEvent = Data.taggedEnum<OfficeEvent>();

@@ -2,7 +2,7 @@ import { DateTime, Duration, Option } from "effect";
 import { describe, expect, it } from "vitest";
 
 import { OfficeEvent } from "../src/OfficeEvent.ts";
-import { escapeSlackText, formatDuration, formatMessage, reminderHeadlines } from "../src/SlackMessage.ts";
+import { escapeSlackText, formatDuration, formatMessage, reminderHeadlines, weekdaysSinceEpoch } from "../src/SlackMessage.ts";
 
 // 2026-09-25T14:05:00Z
 const at = DateTime.makeUnsafe(1_790_345_100_000);
@@ -17,6 +17,11 @@ const member = {
 };
 
 const office = { guildId: "g1", channelId: "c1" };
+
+// 2026-09-28T09:15:00Z, when the reminder fires on a Monday.
+const monday = DateTime.makeUnsafe("2026-09-28T09:15:00Z");
+
+const reminder = { ...office, at: monday };
 
 const JOIN_URL = "https://discord.com/channels/g1/c1";
 
@@ -121,22 +126,35 @@ describe("formatMessage", () => {
   });
 
   it("links the reminder to the office", () => {
-    const message = formatMessage(OfficeEvent.Reminder(office), 0);
+    const message = formatMessage(OfficeEvent.Reminder(reminder), 0);
 
-    expect(message.text).toBe("⏰ Daily reminder: come hang out in the virtual office!");
     expect(JSON.stringify(message.blocks)).toContain(JOIN_URL);
   });
 
-  it("varies the wording and wraps around the phrasings", () => {
+  it("rotates the reminder by date and ignores the variant", () => {
+    const onDay = (day: number, variant = 0) =>
+      formatMessage(OfficeEvent.Reminder({ ...office, at: DateTime.add(monday, { days: day }) }), variant).text;
+
+    expect(onDay(0, 0)).toBe(onDay(0, 7));
+    expect(onDay(0)).not.toBe(onDay(1));
+  });
+
+  it("shows every reminder once before repeating, skipping weekends", () => {
     const count = reminderHeadlines.length;
-    const texts = Array.from({ length: count + 1 }, (_, variant) => formatMessage(OfficeEvent.Reminder(office), variant).text);
+
+    // Weekdays only, the way the reminder cron fires.
+    const weekdays = Array.from({ length: count + 1 }, (_, n) => Math.floor(n / 5) * 7 + (n % 5));
+
+    const texts = weekdays.map(
+      (day) => formatMessage(OfficeEvent.Reminder({ ...office, at: DateTime.add(monday, { days: day }) }), 0).text,
+    );
 
     expect(new Set(texts).size).toBe(count);
     expect(texts[count]).toBe(texts[0]);
   });
 
   it("copes with a negative variant", () => {
-    expect(formatMessage(OfficeEvent.Reminder(office), -1).text).toBeTypeOf("string");
+    expect(formatMessage(OfficeEvent.Opened(member), -1).text).toBeTypeOf("string");
   });
 
   it("escapes the display name in every phrasing", () => {
@@ -146,5 +164,19 @@ describe("formatMessage", () => {
       expect(message.text).toContain("*&lt;!here&gt;*");
       expect(message.blocks[0]).toMatchObject({ text: { text: message.text } });
     }
+  });
+});
+
+describe("weekdaysSinceEpoch", () => {
+  it("counts consecutive weekdays and pauses over the weekend", () => {
+    const count = (iso: string) => weekdaysSinceEpoch(DateTime.makeUnsafe(iso));
+
+    // The epoch was a Thursday.
+    expect(count("1970-01-01T09:15:00Z")).toBe(3);
+    expect(count("1970-01-02T09:15:00Z")).toBe(4);
+    expect(count("1970-01-03T09:15:00Z")).toBe(5);
+    expect(count("1970-01-04T09:15:00Z")).toBe(5);
+    expect(count("1970-01-05T09:15:00Z")).toBe(5);
+    expect(count("1970-01-06T09:15:00Z")).toBe(6);
   });
 });
