@@ -1,4 +1,4 @@
-import { Cron, DateTime, Schedule, Stream } from "effect";
+import { Cron, DateTime, Effect, Schedule, Stream } from "effect";
 
 import { OfficeEvent, type OfficeLocation } from "./OfficeEvent.ts";
 
@@ -16,5 +16,5 @@ export const reminders = (office: OfficeLocation): Stream.Stream<OfficeEvent> =>
   Stream.fromSchedule(Schedule.cron(reminderCron)).pipe(
     // Only a cron string can fail to parse, and this one is already built.
     Stream.orDie,
-    Stream.map(() => OfficeEvent.Reminder(office)),
+    Stream.mapEffect(() => Effect.map(DateTime.now, (at) => OfficeEvent.Reminder({ ...office, at }))),
   );

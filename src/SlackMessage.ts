@@ -71,11 +71,37 @@ const emptiedHeadlines: Variants = [
   "💤 The virtual office has gone quiet. Drop in and wake it up!",
 ];
 
-const reminderHeadlines: Variants = [
+export const reminderHeadlines: Variants = [
   "⏰ Daily reminder: come hang out in the virtual office!",
   "⏰ It's virtual office o'clock — come work alongside us!",
   "⏰ Friendly nudge: the virtual office is better with you in it!",
+  "🪴 The office plant is lonely. It's been talking to itself again. Come keep it company!",
+  "☕ The virtual coffee is fresh, free, and calorie-free. No excuses — come grab a cup!",
+  "🦗 Crickets in the virtual office. Crickets are terrible coworkers. Come replace them!",
+  "🎧 Studies show* working next to people is 73% less lonely. *We made that up. Join anyway!",
+  "🧑‍💻 Your rubber duck called. It says it wants to meet the team. Bring it to the virtual office!",
+  "🍩 Rumour has it there are virtual donuts in the office. They're not real, but the company is!",
+  "📢 Mandatory fun is not mandatory. But it is fun. See you in the virtual office?",
+  "🐛 Bugs are easier to squash as a team. Bring yours to the virtual office!",
+  "🪑 We saved you a seat in the virtual office. Someone keeps trying to sit in it. Hurry!",
+  "🔇 You can stay on mute. We just like knowing you're there. Come hang out!",
+  "🚀 Productivity is contagious. Come catch some in the virtual office!",
+  "🙈 Nobody will see your messy desk. Cameras optional — come hang out!",
+  "🧃 Hydration check! Grab a drink and bring it to the virtual office.",
+  "🕵️ We noticed you're not in the virtual office. We're not mad, just disappointed. Come on in!",
+  "🎲 Today's forecast: 100% chance of good company in the virtual office.",
 ];
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+// Counts Mondays to Fridays since the epoch, so consecutive weekdays get
+// consecutive numbers. A weekend day shares its number with the Monday after.
+export const weekdaysSinceEpoch = (at: DateTime.Utc): number => {
+  // The epoch was a Thursday; shifting by 3 lines the weeks up on Monday.
+  const days = Math.floor(DateTime.toEpochMillis(at) / DAY_MS) + 3;
+
+  return Math.floor(days / 7) * 5 + Math.min(days % 7, 5);
+};
 
 export const formatDuration = (duration: Duration.Duration): string => {
   const totalMinutes = Math.floor(Duration.toMinutes(duration));
@@ -133,6 +159,8 @@ const recapFields = (recap: SessionRecap): SectionBlock => ({
 });
 
 // `variant` picks one of the phrasings, so repeated posts don't all read the same.
+// Reminders ignore it and rotate by date instead, so every phrasing comes up
+// once before any repeats.
 export const formatMessage = (event: OfficeEvent, variant: number): SlackMessage =>
   OfficeEvent.$match(event, {
     Opened: (member) => {
@@ -162,7 +190,7 @@ export const formatMessage = (event: OfficeEvent, variant: number): SlackMessage
       };
     },
     Reminder: (office) => {
-      const text = pick(reminderHeadlines, variant);
+      const text = pick(reminderHeadlines, weekdaysSinceEpoch(office.at));
 
       return { text, blocks: [headline(text, Option.none()), joinButton(office, "🎧 Join the office")] };
     },

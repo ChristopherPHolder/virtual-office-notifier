@@ -201,8 +201,9 @@ describe("daily reminder", () => {
       yield* Queue.end(queue);
       yield* Fiber.join(fiber);
 
+      // Reminders rotate by date, and that Thursday picks the fourth phrasing.
       assert.deepStrictEqual(yield* slack.postedTexts, [
-        "⏰ Daily reminder: come hang out in the virtual office!",
+        "🪴 The office plant is lonely. It's been talking to itself again. Come keep it company!",
       ]);
     }));
 });
