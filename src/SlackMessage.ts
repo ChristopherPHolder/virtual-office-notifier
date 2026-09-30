@@ -71,10 +71,25 @@ const emptiedHeadlines: Variants = [
   "💤 The virtual office has gone quiet. Drop in and wake it up!",
 ];
 
-const reminderHeadlines: Variants = [
+export const reminderHeadlines: Variants = [
   "⏰ Daily reminder: come hang out in the virtual office!",
   "⏰ It's virtual office o'clock — come work alongside us!",
   "⏰ Friendly nudge: the virtual office is better with you in it!",
+  "🪴 The office plant is lonely. It's been talking to itself again. Come keep it company!",
+  "☕ The virtual coffee is fresh, free, and calorie-free. No excuses — come grab a cup!",
+  "🦗 Crickets in the virtual office. Crickets are terrible coworkers. Come replace them!",
+  "🎧 Studies show* working next to people is 73% less lonely. *We made that up. Join anyway!",
+  "🧑‍💻 Your rubber duck called. It says it wants to meet the team. Bring it to the virtual office!",
+  "🍩 Rumour has it there are virtual donuts in the office. They're not real, but the company is!",
+  "📢 Mandatory fun is not mandatory. But it is fun. See you in the virtual office?",
+  "🐛 Bugs are easier to squash as a team. Bring yours to the virtual office!",
+  "🪑 We saved you a seat in the virtual office. Someone keeps trying to sit in it. Hurry!",
+  "🔇 You can stay on mute. We just like knowing you're there. Come hang out!",
+  "🚀 Productivity is contagious. Come catch some in the virtual office!",
+  "🙈 Nobody will see your messy desk. Cameras optional — come hang out!",
+  "🧃 Hydration check! Grab a drink and bring it to the virtual office.",
+  "🕵️ We noticed you're not in the virtual office. We're not mad, just disappointed. Come on in!",
+  "🎲 Today's forecast: 100% chance of good company in the virtual office.",
 ];
 
 export const formatDuration = (duration: Duration.Duration): string => {

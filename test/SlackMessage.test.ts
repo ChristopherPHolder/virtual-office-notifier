@@ -2,7 +2,7 @@ import { DateTime, Duration, Option } from "effect";
 import { describe, expect, it } from "vitest";
 
 import { OfficeEvent } from "../src/OfficeEvent.ts";
-import { escapeSlackText, formatDuration, formatMessage } from "../src/SlackMessage.ts";
+import { escapeSlackText, formatDuration, formatMessage, reminderHeadlines } from "../src/SlackMessage.ts";
 
 // 2026-09-25T14:05:00Z
 const at = DateTime.makeUnsafe(1_790_345_100_000);
@@ -128,10 +128,11 @@ describe("formatMessage", () => {
   });
 
   it("varies the wording and wraps around the phrasings", () => {
-    const texts = [0, 1, 2, 3].map((variant) => formatMessage(OfficeEvent.Reminder(office), variant).text);
+    const count = reminderHeadlines.length;
+    const texts = Array.from({ length: count + 1 }, (_, variant) => formatMessage(OfficeEvent.Reminder(office), variant).text);
 
-    expect(new Set(texts).size).toBe(3);
-    expect(texts[3]).toBe(texts[0]);
+    expect(new Set(texts).size).toBe(count);
+    expect(texts[count]).toBe(texts[0]);
   });
 
   it("copes with a negative variant", () => {
