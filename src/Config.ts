@@ -12,9 +12,22 @@ export const SlackConfig = Config.all({
   webhookUrl: secret("SLACK_WEBHOOK_URL"),
 });
 
+// Blank counts as unset, since that's how CI passes a missing secret.
+const optionalSecret = (name: string) =>
+  Config.Redacted(name).pipe(
+    Config.option,
+    Config.map(Option.filter((value) => Redacted.value(value).trim() !== "")),
+  );
+
+const modelList = (name: string, defaults: Array.NonEmptyReadonlyArray<string>) =>
+  Config.Array(Schema.Trim.pipe(Schema.decodeTo(Schema.NonEmptyString)), name).pipe(
+    Config.map((models) => (Array.isReadonlyArrayNonEmpty(models) ? models : defaults)),
+    Config.withDefault(defaults),
+  );
+
 // The first is preferred. The rest are the best of OpenRouter's free models in
 // October 2026.
-export const DEFAULT_MODELS: Array.NonEmptyReadonlyArray<string> = [
+export const DEFAULT_OPENROUTER_MODELS: Array.NonEmptyReadonlyArray<string> = [
   "openrouter/free",
   "nvidia/nemotron-3-ultra-550b-a55b:free",
   "nvidia/nemotron-3-super-120b-a12b:free",
@@ -22,14 +35,21 @@ export const DEFAULT_MODELS: Array.NonEmptyReadonlyArray<string> = [
   "dots-studio/dots-3-note-preview:free",
 ];
 
-// Blank counts as unset, since that's how CI passes a missing secret.
+// All within Workers AI's free daily allocation.
+export const DEFAULT_CLOUDFLARE_MODELS: Array.NonEmptyReadonlyArray<string> = [
+  "@cf/nvidia/nemotron-3-120b-a12b",
+  "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+  "@cf/google/gemma-4-26b-a4b-it",
+];
+
 export const AiConfig = Config.all({
-  apiKey: Config.Redacted("OPENROUTER_API_KEY").pipe(
-    Config.option,
-    Config.map(Option.filter((key) => Redacted.value(key).trim() !== "")),
-  ),
-  models: Config.Array(Schema.Trim.pipe(Schema.decodeTo(Schema.NonEmptyString)), "OPENROUTER_MODELS").pipe(
-    Config.map((models) => (Array.isReadonlyArrayNonEmpty(models) ? models : DEFAULT_MODELS)),
-    Config.withDefault(DEFAULT_MODELS),
-  ),
+  openRouter: Config.all({
+    apiKey: optionalSecret("OPENROUTER_API_KEY"),
+    models: modelList("OPENROUTER_MODELS", DEFAULT_OPENROUTER_MODELS),
+  }),
+  cloudflare: Config.all({
+    accountId: optionalSecret("CLOUDFLARE_ACCOUNT_ID"),
+    apiToken: optionalSecret("CLOUDFLARE_API_TOKEN"),
+    models: modelList("CLOUDFLARE_MODELS", DEFAULT_CLOUDFLARE_MODELS),
+  }),
 });

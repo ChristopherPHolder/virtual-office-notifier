@@ -1,3 +1,4 @@
+import { OpenAiClient, OpenAiLanguageModel } from "@effect/ai-openai-compat";
 import { OpenRouterClient, OpenRouterLanguageModel } from "@effect/ai-openrouter";
 import { NodeHttpClient } from "@effect/platform-node";
 import {
@@ -11,10 +12,12 @@ import {
   Match,
   Option,
   Random,
+  Redacted,
   Schema,
   SchemaTransformation,
 } from "effect";
 import { AiError, LanguageModel, Model, type Response } from "effect/unstable/ai";
+import type { HttpClient } from "effect/unstable/http";
 
 import { AiConfig } from "./Config.ts";
 import { OfficeEvent } from "./OfficeEvent.ts";
@@ -172,10 +175,34 @@ const orderModels = Effect.fnUntraced(function* <A>(models: Array.NonEmptyReadon
   return Array.prepend(yield* Random.shuffle(Array.filter(models, (model) => model !== first)), first);
 });
 
+type ModelLayer = Layer.Layer<LanguageModel.LanguageModel | Model.ProviderName | Model.ModelName>;
+
 interface ModelStep {
-  readonly provide: Layer.Layer<LanguageModel.LanguageModel | Model.ProviderName | Model.ModelName>;
+  readonly provide: ModelLayer;
   readonly while: (error: HeadlineError) => boolean;
 }
+
+// A daily limit only skips the rest of that provider's models.
+const providerSteps = (models: Array.NonEmptyReadonlyArray<ModelLayer>) =>
+  Array.map(models, (provide, index): ModelStep => ({ provide, while: (error) => index === 0 || !isDailyLimit(error) }));
+
+// Thinking would spend the minute and the free daily Neurons before the reply,
+// and a headline needs well under 200 tokens.
+const CLOUDFLARE_MODEL_CONFIG = {
+  temperature: 1,
+  max_output_tokens: 200,
+  chat_template_kwargs: { enable_thinking: false },
+};
+
+// Builds the provider's client once, for as long as the writer lives.
+const withClient = Effect.fnUntraced(function* <C>(
+  models: Array.NonEmptyReadonlyArray<Model.Model<"openai", LanguageModel.LanguageModel, C>>,
+  client: Layer.Layer<C, never, HttpClient.HttpClient>,
+) {
+  const context = yield* Layer.build(client);
+
+  return yield* Effect.all(Array.map(models, (model) => model.captureRequirements)).pipe(Effect.provideContext(context));
+});
 
 export class HeadlineWriter extends Context.Service<
   HeadlineWriter,
@@ -184,31 +211,24 @@ export class HeadlineWriter extends Context.Service<
     write(event: OfficeEvent): Effect.Effect<Option.Option<GeneratedHeadline>>;
   }
 >()("virtual-office-notifier/HeadlineWriter") {
-  // Tries the models one at a time until one writes a usable headline.
-  static readonly layerModels = <P extends string, R>(
-    models: Array.NonEmptyReadonlyArray<Model.Model<P, LanguageModel.LanguageModel, R>>,
-  ) =>
-    Layer.effect(
+  // Either provider may go first, and its models are tried in turn until one
+  // writes a usable headline.
+  static readonly layerProviders = (providers: Array.NonEmptyReadonlyArray<Array.NonEmptyReadonlyArray<ModelLayer>>) =>
+    Layer.succeed(
       HeadlineWriter,
-      Effect.gen(function* () {
-        const ready = yield* Effect.all(Array.map(models, (model) => model.captureRequirements));
-
-        const write = Effect.fn("HeadlineWriter.write")(
+      HeadlineWriter.of({
+        write: Effect.fn("HeadlineWriter.write")(
           function* (event: OfficeEvent) {
-            const order = yield* orderModels(ready);
-
-            const plan = ExecutionPlan.make<Array.NonEmptyReadonlyArray<ModelStep>>(
-              ...Array.map(order, (provide) => ({ provide, while: (error: HeadlineError) => !isDailyLimit(error) })),
-            );
+            const shuffled = (yield* Random.nextBoolean) ? providers : Array.reverse(providers);
+            const ordered = yield* Effect.all(Array.map(shuffled, orderModels));
+            const plan = ExecutionPlan.make<Array.NonEmptyReadonlyArray<ModelStep>>(...Array.flatMap(ordered, providerSteps));
 
             return yield* writeWithModel(briefFor(event)).pipe(Effect.withExecutionPlan(plan));
           },
           Effect.tapError(() => Effect.logWarning("No AI model could write a headline")),
           Effect.option,
           (effect, event) => Effect.annotateLogs(effect, { headline: event._tag }),
-        );
-
-        return HeadlineWriter.of({ write });
+        ),
       }),
     );
 
@@ -216,21 +236,37 @@ export class HeadlineWriter extends Context.Service<
 
   static readonly layer = Layer.unwrap(
     Effect.gen(function* () {
-      const { apiKey, models } = yield* AiConfig;
+      const { openRouter, cloudflare } = yield* AiConfig;
 
-      return Option.match(apiKey, {
-        onNone: () =>
-          Layer.effectDiscard(Effect.logInfo("No OPENROUTER_API_KEY, so using the fixed headlines")).pipe(
+      const providers = yield* Effect.all([
+        ...Option.toArray(
+          Option.map(openRouter.apiKey, (apiKey) =>
+            withClient(
+              Array.map(openRouter.models, (model) => OpenRouterLanguageModel.model(model, { temperature: 1 })),
+              OpenRouterClient.layer({ apiKey, siteTitle: "Virtual Office Notifier" }),
+            ),
+          ),
+        ),
+        ...Option.toArray(
+          Option.map(Option.all({ accountId: cloudflare.accountId, apiToken: cloudflare.apiToken }), ({ accountId, apiToken }) =>
+            withClient(
+              Array.map(cloudflare.models, (model) => OpenAiLanguageModel.model(model, CLOUDFLARE_MODEL_CONFIG)),
+              OpenAiClient.layer({
+                apiKey: apiToken,
+                apiUrl: `https://api.cloudflare.com/client/v4/accounts/${Redacted.value(accountId)}/ai/v1`,
+              }),
+            ),
+          ),
+        ),
+      ]);
+
+      return Array.match(providers, {
+        onEmpty: () =>
+          Layer.effectDiscard(Effect.logInfo("No AI provider configured, so using the fixed headlines")).pipe(
             Layer.provideMerge(HeadlineWriter.layerFixed),
           ),
-        onSome: (key) =>
-          HeadlineWriter.layerModels(
-            Array.map(models, (model) => OpenRouterLanguageModel.model(model, { temperature: 1 })),
-          ).pipe(
-            Layer.provide(OpenRouterClient.layer({ apiKey: key, siteTitle: "Virtual Office Notifier" })),
-            Layer.provide(NodeHttpClient.layerUndici),
-          ),
+        onNonEmpty: HeadlineWriter.layerProviders,
       });
     }),
-  );
+  ).pipe(Layer.provide(NodeHttpClient.layerUndici));
 }
