@@ -16,8 +16,8 @@ import {
   Schema,
   SchemaTransformation,
 } from "effect";
-import { AiError, LanguageModel, Model, type Response } from "effect/unstable/ai";
-import type { HttpClient } from "effect/unstable/http";
+import { AiError, LanguageModel, Model, type Response } from "effect/ai";
+import type { HttpClient } from "effect/http";
 
 import { AiConfig } from "./Config.ts";
 import { OfficeEvent } from "./OfficeEvent.ts";
@@ -37,7 +37,7 @@ import {
 const Line = (minLength: number, maxLength: number, pattern: RegExp) =>
   Schema.String.pipe(
     Schema.decodeTo(
-      Schema.String.check(Schema.isLengthBetween(minLength, maxLength), Schema.isPattern(pattern)),
+      Schema.String.check(Schema.isMinLength(minLength), Schema.isMaxLength(maxLength), Schema.isPattern(pattern)),
       SchemaTransformation.transform({
         decode: (line) => line.trim().replace(/^["'“]+|["'”]+$/g, "").trim(),
         encode: identity,

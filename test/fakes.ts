@@ -5,7 +5,7 @@ import {
   HttpClientError,
   type HttpClientRequest,
   HttpClientResponse,
-} from "effect/unstable/http";
+} from "effect/http";
 
 import { HeadlineWriter } from "../src/HeadlineWriter.ts";
 import { SlackNotifier } from "../src/SlackNotifier.ts";

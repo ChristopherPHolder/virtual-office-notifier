@@ -9,27 +9,27 @@ importers:
   .:
     dependencies:
       '@effect/ai-openai-compat':
-        specifier: 4.0.0-rc.117
-        version: 4.0.0-rc.117(effect@4.0.0-rc.117)
+        specifier: 4.0.0
+        version: 4.0.0(effect@4.0.0)
       '@effect/ai-openrouter':
-        specifier: 4.0.0-rc.117
-        version: 4.0.0-rc.117(effect@4.0.0-rc.117)
+        specifier: 4.0.0
+        version: 4.0.0(effect@4.0.0)
       '@effect/platform-node':
-        specifier: 4.0.0-rc.117
-        version: 4.0.0-rc.117(effect@4.0.0-rc.117)(redis@6.2.1)
+        specifier: 4.0.0
+        version: 4.0.0(effect@4.0.0)(redis@6.2.1)
       discord.js:
         specifier: 14.27.0
         version: 14.27.0
       effect:
-        specifier: 4.0.0-rc.117
-        version: 4.0.0-rc.117
+        specifier: 4.0.0
+        version: 4.0.0
     devDependencies:
       '@effect/tsgo':
-        specifier: 0.45.0
-        version: 0.45.0
+        specifier: 0.47.2
+        version: 0.47.2
       '@effect/vitest':
-        specifier: 4.0.0-rc.117
-        version: 4.0.0-rc.117(effect@4.0.0-rc.117)(vitest@5.0.1(@types/node@26.6.2)(vite@8.3.1(@types/node@26.6.2)))
+        specifier: 4.0.0
+        version: 4.0.0(effect@4.0.0)(vitest@5.0.1(@types/node@26.6.2)(vite@8.3.1(@types/node@26.6.2)))
       '@oxlint/plugins':
         specifier: 1.85.0
         version: 1.85.0
@@ -79,72 +79,72 @@ packages:
     resolution: {integrity: sha512-wPlQDxEmlDg5IxhJPuxXr3Vy9AjYq5xCvFWGJyD7w7Np8ZGu+Mc+97LCoEc/+AYCo2IDpKioiH0/c/mj5ZR9Uw==}
     engines: {node: '>=16.11.0'}
 
-  '@effect/ai-openai-compat@4.0.0-rc.117':
-    resolution: {integrity: sha512-TJFO5CGOks+y9d6Fbj3/lfWO4FHWMIS0h+8MOMEcNyDau/BTZYIYP/Ab9OID0Rwsbvq3Wi7kxJKpA88QgaVqkw==}
+  '@effect/ai-openai-compat@4.0.0':
+    resolution: {integrity: sha512-zoFwI5M7pUEj4UMHMbPsQGaVRxirIAIqzfVZAtpjJPXWwd/acwxN4kI1nS9gfn/lCHvFIc9xPEMstforcODesw==}
     peerDependencies:
-      effect: ^4.0.0-rc.117
+      effect: ^4.0.0
 
-  '@effect/ai-openrouter@4.0.0-rc.117':
-    resolution: {integrity: sha512-CNfMPZSsYQmg3vt6/H9lYr2Sov9e+EoviMTKoRGtVgl8EVoj+Hd00kgh1MrhGnNanR7ZNUNOOqTzN1ENV1LMlw==}
+  '@effect/ai-openrouter@4.0.0':
+    resolution: {integrity: sha512-FlQHomqreGlC/Fj1vfTyk3kZ5MD+Be5rjEumFshtnGsmi+bE1uRDbHjdbAbVitpDQJGQKRxqwhPMOfgF6J3Gfw==}
     peerDependencies:
-      effect: ^4.0.0-rc.117
+      effect: ^4.0.0
 
-  '@effect/platform-node-shared@4.0.0-rc.117':
-    resolution: {integrity: sha512-GyRkEfLBG49MwJe+/XDPiXYcQ44RA9p2z0AurlsWhR1cd1PqOUMEZU1pORL+/R5hR8aH6ZuqoJYD8lAc6h+wlA==}
+  '@effect/platform-node-shared@4.0.0':
+    resolution: {integrity: sha512-VBXHJU9UXVZPdQGGDRjGXpo+TpOzRwZuMrdKAtIxi1qwcRftmacZ1zTgIrzBa0Z2RA2KVkoOecQUsTlt/nJZhw==}
     engines: {node: '>=18.0.0'}
     peerDependencies:
-      effect: ^4.0.0-rc.117
+      effect: ^4.0.0
 
-  '@effect/platform-node@4.0.0-rc.117':
-    resolution: {integrity: sha512-WbPcvQDkqXFnCeG6LohJ9eVNapCDhZbCpezhYKxm0IsZEk7swakRh7RkC1t2CXzd3hGmszTv2k9e/pXyZuL+wQ==}
+  '@effect/platform-node@4.0.0':
+    resolution: {integrity: sha512-/L+4MUbl8FejPKLHLROYSOebvHnfixkP8KiblSD/DE5uH5xENZBHaux4nH6XMnRP+lr8ajpEJFS8sUrmmxFJeQ==}
     engines: {node: '>=18.0.0'}
     peerDependencies:
-      effect: ^4.0.0-rc.117
+      effect: ^4.0.0
       redis: '>=5.0.0 <7.0.0'
 
-  '@effect/tsgo-darwin-arm64@0.45.0':
-    resolution: {integrity: sha512-WUoiEVcm8E19QK6fl63lsssM4dkT9IFnULbmqQ6LBfv7H9uRkpE9S3thj8ZtZ+vl/QY8atwfuaTf+3A1m/kGtQ==}
+  '@effect/tsgo-darwin-arm64@0.47.2':
+    resolution: {integrity: sha512-sLYKt201VdTjSHG3rbyIdpLMNGEMiArm0OgO7kYfnA0yRV0ux0blgcucf97bx90gIvDJFSSL17QCSDPGs9jsKQ==}
     cpu: [arm64]
     os: [darwin]
 
-  '@effect/tsgo-darwin-x64@0.45.0':
-    resolution: {integrity: sha512-s3yz7ZfIzvObXJ/r5xd9sEPxHKC3L+D+yedS1BV2Kpn47Je2svYCNYKxzXIpqFLkNjK+RcOQrcfYbYEpKZZa6g==}
+  '@effect/tsgo-darwin-x64@0.47.2':
+    resolution: {integrity: sha512-gW0fdFjSIacCDOjLa+vS/xWmyElbM0jX3cCTlKXGzNCyMKsP/T0MkvT2GZO/njB2jIt/XXG9qEQ5FE/Rcqt7Zg==}
     cpu: [x64]
     os: [darwin]
 
-  '@effect/tsgo-linux-arm64@0.45.0':
-    resolution: {integrity: sha512-N+lyzixtylOOn49demDaqg0kb/U8ISxM10Gphs1pIMSGlqlfqC4inYEoFpYej+f4T/cRlkA11Ue7wJzNz83ePA==}
+  '@effect/tsgo-linux-arm64@0.47.2':
+    resolution: {integrity: sha512-hA3SoKGuLd0HNqJ34QcYEWwpE6tvit3xpKupwj1TaPtHpLLGdtSF7czBIknp6kR8fOvnuYLjB6aEkxXmJsTVWg==}
     cpu: [arm64]
     os: [linux]
 
-  '@effect/tsgo-linux-arm@0.45.0':
-    resolution: {integrity: sha512-f6zL6YbWA9lXdfJ//KOjUz/U3CdGtajKi5NsR/lcQaKfZiJwHfeeLBB3yetF3qbPGSA149/kuMoDMWL13RUH3A==}
+  '@effect/tsgo-linux-arm@0.47.2':
+    resolution: {integrity: sha512-GT8fgQ3Pnzr0ax/AtYptztVquLAWeWoyLvQTpfI5APrs+Me+/rSwOLSA7//17ZVmNYbcGbKImX8laUYeDqByNQ==}
     cpu: [arm]
     os: [linux]
 
-  '@effect/tsgo-linux-x64@0.45.0':
-    resolution: {integrity: sha512-aWt0G8celAxJOis4+xiILkyMP/3J+vukimUhSoCmUAPt8zoT9qhZcN64XYZE7jfqp88ByRdgN9GK1/C7YfPtcQ==}
+  '@effect/tsgo-linux-x64@0.47.2':
+    resolution: {integrity: sha512-vELwVsUQ5VlM2jbvv7zaIPOkFsxmaS0nLqq+p0RodtkQiuScg27febnLClzKAv/Tl6GrXTBz4IBh78aBF2CvbQ==}
     cpu: [x64]
     os: [linux]
 
-  '@effect/tsgo-win32-arm64@0.45.0':
-    resolution: {integrity: sha512-EAdeV366ja+M4XCx6xjXMv4Xkc0Fgzy4bapa0saDWcGhllNLqJDfOk4lk0BgAEjBUI8+0xC+PXKVB5SMz4EpVA==}
+  '@effect/tsgo-win32-arm64@0.47.2':
+    resolution: {integrity: sha512-FSwpJp3XaJK9o7cOXtJcYIsvZWR/mrY4ZZyyTuRgphEZju7FwOzLeVhLr9ziyScfmisOpX2i+8v1H+PlMMZ1TQ==}
     cpu: [arm64]
     os: [win32]
 
-  '@effect/tsgo-win32-x64@0.45.0':
-    resolution: {integrity: sha512-1Hsr/sT5dmIafoY9L0ASJo4VqGyPNzM1nwTb4Wj1Lmjq6kGuwO/PVozFg3WZZ0piChFmgiU3nx1AKZfyqgjGUw==}
+  '@effect/tsgo-win32-x64@0.47.2':
+    resolution: {integrity: sha512-Lh/N7E2p6E0tBZM+uZ40Hv/AUG81WGtw76H4pLLPAG7wFANwGSx984NwKypXqGtOXBmKqb0R/cYpszDyzbNyYA==}
     cpu: [x64]
     os: [win32]
 
-  '@effect/tsgo@0.45.0':
-    resolution: {integrity: sha512-gPG0ixVHgtYBUe5DbKX9vzHlhqd9+ZEfs4m/XWy0808av0A2XqMzaG3F5rnPBN7EUJRPlo9TluIi8WHx/pBV+A==}
+  '@effect/tsgo@0.47.2':
+    resolution: {integrity: sha512-mGIelPZhTJg8g+RgiAe7wrB8NLw/lOzPGntAYBBqEJS0/I8ir1/ULKcpFQyuAfPjwkDYrg93KWv1PDGwgsgBIA==}
     hasBin: true
 
-  '@effect/vitest@4.0.0-rc.117':
-    resolution: {integrity: sha512-jJg9M7T3OhTcvoD9Zi28S5+0H+axlSHAYjXM8TYeLJy/FVlPe0B/Vc3ZfaqUF0rwkfQ6ziyCdjiBS46+182H1Q==}
+  '@effect/vitest@4.0.0':
+    resolution: {integrity: sha512-kGElCPFGtP+CgMCwV/HjJWqtE3zYo6I1+8MSA54l+EI24lPU9p2Efa+TBp1jfkg9j711KKzEqgSAy3VzTsb76Q==}
     peerDependencies:
-      effect: ^4.0.0-rc.117
+      effect: ^4.0.0
       vitest: '>=5.0.0 <6.0.0'
 
   '@jridgewell/resolve-uri@3.1.2':
@@ -595,8 +595,8 @@ packages:
     resolution: {integrity: sha512-qHbFlFG2N7y3LjPySYsL6A1+BnX6bkTVgo842EX0CqVPk/KTMwZkojPHEXKsQUpWZNyz5BISNHK1cPpQw0+m4A==}
     engines: {node: '>=18'}
 
-  effect@4.0.0-rc.117:
-    resolution: {integrity: sha512-UUyi9QiOW4nySFIBM3KnYbNMd9EZliOdKfBcyLD0mPMPheO2fkuXS5y0opjWc9oqzlJxPQICEGm8gGw3kh9j/w==}
+  effect@4.0.0:
+    resolution: {integrity: sha512-ooc1TG5t+FfzgYnFz2ff6BBKyZ7EwBRVXC7c4RhQUAD6/TZ2gTXXMeb4WX7a19ozQo4J73/QW+S00YAIresoMQ==}
 
   es-module-lexer@2.3.2:
     resolution: {integrity: sha512-poHGpORABojJJucnV9KbOavETW8lBVnphkW77ER5/BQ5Fz7oXSoCNek7IH3vR5nRjdsEz926ibFYX8KtLQmdyw==}
@@ -897,6 +897,18 @@ packages:
       utf-8-validate:
         optional: true
 
+  ws@8.22.0:
+    resolution: {integrity: sha512-Ydggc987+RO0AnWtZ/7Wq9FtNvcrL1b/RO0ud9mWjUPgDrsAAwQSF51sm2hm1XofbU/4jkpGEsLFsZZxU+1DOg==}
+    engines: {node: '>=10.0.0'}
+    peerDependencies:
+      bufferutil: ^4.0.1
+      utf-8-validate: '>=5.0.2'
+    peerDependenciesMeta:
+      bufferutil:
+        optional: true
+      utf-8-validate:
+        optional: true
+
 snapshots:
 
   '@discordjs/builders@1.14.1':
@@ -948,67 +960,67 @@ snapshots:
       - bufferutil
       - utf-8-validate
 
-  '@effect/ai-openai-compat@4.0.0-rc.117(effect@4.0.0-rc.117)':
+  '@effect/ai-openai-compat@4.0.0(effect@4.0.0)':
     dependencies:
-      effect: 4.0.0-rc.117
+      effect: 4.0.0
 
-  '@effect/ai-openrouter@4.0.0-rc.117(effect@4.0.0-rc.117)':
+  '@effect/ai-openrouter@4.0.0(effect@4.0.0)':
     dependencies:
-      effect: 4.0.0-rc.117
+      effect: 4.0.0
 
-  '@effect/platform-node-shared@4.0.0-rc.117(effect@4.0.0-rc.117)':
+  '@effect/platform-node-shared@4.0.0(effect@4.0.0)':
     dependencies:
       '@types/ws': 8.18.1
-      effect: 4.0.0-rc.117
-      ws: 8.21.3
+      effect: 4.0.0
+      ws: 8.22.0
     transitivePeerDependencies:
       - bufferutil
       - utf-8-validate
 
-  '@effect/platform-node@4.0.0-rc.117(effect@4.0.0-rc.117)(redis@6.2.1)':
+  '@effect/platform-node@4.0.0(effect@4.0.0)(redis@6.2.1)':
     dependencies:
-      '@effect/platform-node-shared': 4.0.0-rc.117(effect@4.0.0-rc.117)
-      effect: 4.0.0-rc.117
+      '@effect/platform-node-shared': 4.0.0(effect@4.0.0)
+      effect: 4.0.0
       redis: 6.2.1
       undici: 8.11.2
     transitivePeerDependencies:
       - bufferutil
       - utf-8-validate
 
-  '@effect/tsgo-darwin-arm64@0.45.0':
+  '@effect/tsgo-darwin-arm64@0.47.2':
     optional: true
 
-  '@effect/tsgo-darwin-x64@0.45.0':
+  '@effect/tsgo-darwin-x64@0.47.2':
     optional: true
 
-  '@effect/tsgo-linux-arm64@0.45.0':
+  '@effect/tsgo-linux-arm64@0.47.2':
     optional: true
 
-  '@effect/tsgo-linux-arm@0.45.0':
+  '@effect/tsgo-linux-arm@0.47.2':
     optional: true
 
-  '@effect/tsgo-linux-x64@0.45.0':
+  '@effect/tsgo-linux-x64@0.47.2':
     optional: true
 
-  '@effect/tsgo-win32-arm64@0.45.0':
+  '@effect/tsgo-win32-arm64@0.47.2':
     optional: true
 
-  '@effect/tsgo-win32-x64@0.45.0':
+  '@effect/tsgo-win32-x64@0.47.2':
     optional: true
 
-  '@effect/tsgo@0.45.0':
+  '@effect/tsgo@0.47.2':
     optionalDependencies:
-      '@effect/tsgo-darwin-arm64': 0.45.0
-      '@effect/tsgo-darwin-x64': 0.45.0
-      '@effect/tsgo-linux-arm': 0.45.0
-      '@effect/tsgo-linux-arm64': 0.45.0
-      '@effect/tsgo-linux-x64': 0.45.0
-      '@effect/tsgo-win32-arm64': 0.45.0
-      '@effect/tsgo-win32-x64': 0.45.0
+      '@effect/tsgo-darwin-arm64': 0.47.2
+      '@effect/tsgo-darwin-x64': 0.47.2
+      '@effect/tsgo-linux-arm': 0.47.2
+      '@effect/tsgo-linux-arm64': 0.47.2
+      '@effect/tsgo-linux-x64': 0.47.2
+      '@effect/tsgo-win32-arm64': 0.47.2
+      '@effect/tsgo-win32-x64': 0.47.2
 
-  '@effect/vitest@4.0.0-rc.117(effect@4.0.0-rc.117)(vitest@5.0.1(@types/node@26.6.2)(vite@8.3.1(@types/node@26.6.2)))':
+  '@effect/vitest@4.0.0(effect@4.0.0)(vitest@5.0.1(@types/node@26.6.2)(vite@8.3.1(@types/node@26.6.2)))':
     dependencies:
-      effect: 4.0.0-rc.117
+      effect: 4.0.0
       vitest: 5.0.1(@types/node@26.6.2)(vite@8.3.1(@types/node@26.6.2))
 
   '@jridgewell/resolve-uri@3.1.2': {}
@@ -1276,7 +1288,7 @@ snapshots:
       - bufferutil
       - utf-8-validate
 
-  effect@4.0.0-rc.117: {}
+  effect@4.0.0: {}
 
   es-module-lexer@2.3.2: {}
 
@@ -1510,3 +1522,5 @@ snapshots:
       stackback: 0.0.2
 
   ws@8.21.3: {}
+
+  ws@8.22.0: {}

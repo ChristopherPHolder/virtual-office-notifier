@@ -17,15 +17,15 @@
   "license": "ISC",
   "packageManager": "pnpm@10.15.0",
   "dependencies": {
-    "@effect/ai-openai-compat": "4.0.0-rc.117",
-    "@effect/ai-openrouter": "4.0.0-rc.117",
-    "@effect/platform-node": "4.0.0-rc.117",
+    "@effect/ai-openai-compat": "4.0.0",
+    "@effect/ai-openrouter": "4.0.0",
+    "@effect/platform-node": "4.0.0",
     "discord.js": "14.27.0",
-    "effect": "4.0.0-rc.117"
+    "effect": "4.0.0"
   },
   "devDependencies": {
-    "@effect/tsgo": "0.45.0",
-    "@effect/vitest": "4.0.0-rc.117",
+    "@effect/tsgo": "0.47.2",
+    "@effect/vitest": "4.0.0",
     "@oxlint/plugins": "1.85.0",
     "@types/node": "26.6.2",
     "oxlint": "1.85.0",
