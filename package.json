@@ -17,6 +17,7 @@
   "license": "ISC",
   "packageManager": "pnpm@10.15.0",
   "dependencies": {
+    "@effect/ai-openai-compat": "4.0.0-rc.117",
     "@effect/ai-openrouter": "4.0.0-rc.117",
     "@effect/platform-node": "4.0.0-rc.117",
     "discord.js": "14.27.0",

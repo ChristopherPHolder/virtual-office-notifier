@@ -41,18 +41,26 @@ All configuration comes from environment variables. Copy `.env.example` to `.env
 | `DISCORD_BOT_TOKEN` | Bot token from the Discord Developer Portal. Secret. |
 | `DISCORD_OFFICE_CHANNEL_ID` | ID of the office voice channel (Developer Mode → right-click the channel → Copy Channel ID). |
 | `SLACK_WEBHOOK_URL` | Slack Incoming Webhook URL. Secret: anyone with it can post to the channel. |
-| `OPENROUTER_API_KEY` | Optional. [OpenRouter](https://openrouter.ai/settings/keys) API key for AI-written headlines. Secret. Without it, the fixed headlines are used. |
-| `OPENROUTER_MODELS` | Optional. Comma-separated OpenRouter models to try, preferred first. Defaults to a list of free models (see `DEFAULT_MODELS` in `src/Config.ts`). |
+| `OPENROUTER_API_KEY` | Optional. [OpenRouter](https://openrouter.ai/settings/keys) API key for AI-written headlines. Secret. |
+| `OPENROUTER_MODELS` | Optional. Comma-separated OpenRouter models to try, preferred first. Defaults to a list of free models (see `DEFAULT_OPENROUTER_MODELS` in `src/Config.ts`). |
+| `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN` | Optional. Cloudflare account ID and a Workers AI API token, for AI-written headlines. The token is secret. |
+| `CLOUDFLARE_MODELS` | Optional. Comma-separated Workers AI models to try, preferred first. Defaults to models within the free daily allocation (see `DEFAULT_CLOUDFLARE_MODELS` in `src/Config.ts`). |
 
 The process exits at startup with an error naming the variable if one is missing.
 
 ### AI headlines
 
-Every message (office opened, office emptied and the weekday reminder) gets a fresh headline and join button label from a free model on OpenRouter, and the card credits the model that wrote them. The model never sees anyone's name: for an opened office it writes a `{name}` placeholder that's filled in afterwards, and the other messages don't name anyone. Each reply is checked (a headline line and a button label line, the placeholder exactly once for an opened office and not at all otherwise, no Slack link syntax, at most 160 characters for the headline and 30 for the label) and escaped before it's posted.
+Every message (office opened, office emptied and the weekday reminder) gets a fresh headline and join button label from a free AI model, and the card credits the model that wrote them. The model never sees anyone's name: for an opened office it writes a `{name}` placeholder that's filled in afterwards, and the other messages don't name anyone. Each reply is checked (a headline line and a button label line, the placeholder exactly once for an opened office and not at all otherwise, no Slack link syntax, at most 160 characters for the headline and 30 for the label) and escaped before it's posted.
 
-Each message tries the models one at a time in a random order. The first model in the list (`openrouter/free` by default, which lets OpenRouter choose any free model that's up) goes first at least half the time. A model that fails, takes longer than a minute, or replies with something unusable is skipped for the next one, and each skip is logged with the model and the reason. If OpenRouter says the key's daily free limit is used up (50 requests a day without credits, 1,000 with at least $10 of credit), the remaining models are skipped, since they'd all be refused too. If there's no key or every model fails, the post goes out with the fixed headline and label instead.
+Each message picks OpenRouter or Cloudflare Workers AI at random to go first, and falls back to the other, using whichever providers are configured. Within a provider, the models are tried one at a time in a random order, and the first model in its list goes first at least half the time (`openrouter/free` by default, which lets OpenRouter choose any free model that's up). A model that fails, takes longer than a minute, or replies with something unusable is skipped for the next one, and each skip is logged with the model and the reason. If OpenRouter says the key's daily free limit is used up (50 requests a day without credits, 1,000 with at least $10 of credit), the rest of OpenRouter's models are skipped, since they'd all be refused too, and Cloudflare is tried if it hasn't been already. Workers AI includes 10,000 Neurons a day for free, which covers a few hundred headlines on the default models. If no provider is configured or every model fails, the post goes out with the fixed headline and label instead.
 
 Free models come and go on OpenRouter. To change the list, pick from the [free models](https://openrouter.ai/models?max_price=0) and set `OPENROUTER_MODELS`, preferred model first.
+
+### Cloudflare Workers AI
+
+1. Sign up at <https://dash.cloudflare.com/sign-up/workers-and-pages>. New accounts are on the Workers Free plan.
+2. Go to **Workers AI** → **Use REST API** → **Create a Workers AI API Token**, and copy the token into `CLOUDFLARE_API_TOKEN`.
+3. Copy the **Account ID** from the same page into `CLOUDFLARE_ACCOUNT_ID`.
 
 ### Discord bot
 
@@ -128,7 +136,7 @@ This creates a `github-deploy` service account, a Workload Identity pool trustin
 | `GCP_WORKLOAD_IDENTITY_PROVIDER` | The Workload Identity provider created above |
 | `GCP_SERVICE_ACCOUNT` | The `github-deploy` service account email |
 | `DISCORD_BOT_TOKEN`, `DISCORD_OFFICE_CHANNEL_ID`, `SLACK_WEBHOOK_URL` | Your local `.env` |
-| `OPENROUTER_API_KEY` | Optional, your local `.env` |
+| `OPENROUTER_API_KEY`, `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN` | Optional, your local `.env` |
 
 GitHub secrets are the source of truth for the app's configuration. To change a value, update the secret and re-run the latest `CI` workflow on `main`:
 

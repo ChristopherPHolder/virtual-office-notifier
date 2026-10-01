@@ -1,7 +1,13 @@
 import { assert, describe, it } from "@effect/vitest";
 import { ConfigProvider, Effect, Exit, Option, Redacted } from "effect";
 
-import { AiConfig, DEFAULT_MODELS, DiscordConfig, SlackConfig } from "../src/Config.ts";
+import {
+  AiConfig,
+  DEFAULT_CLOUDFLARE_MODELS,
+  DEFAULT_OPENROUTER_MODELS,
+  DiscordConfig,
+  SlackConfig,
+} from "../src/Config.ts";
 
 const withEnv = (env: Record<string, string>) =>
   Effect.provideService(ConfigProvider.ConfigProvider, ConfigProvider.fromEnv({ env }));
@@ -39,22 +45,41 @@ describe("Config", () => {
       assert.include(failureMessage(exit), "SLACK_WEBHOOK_URL");
     }));
 
-  it.effect("treats a missing or blank OpenRouter key as no key, with free default models", () =>
+  it.effect("treats missing or blank AI credentials as unset, with free default models", () =>
     Effect.gen(function* () {
       const missing = yield* AiConfig.pipe(withEnv({}));
-      const blank = yield* AiConfig.pipe(withEnv({ OPENROUTER_API_KEY: " " }));
 
-      assert.isTrue(Option.isNone(missing.apiKey));
-      assert.isTrue(Option.isNone(blank.apiKey));
-      assert.deepStrictEqual(missing.models, DEFAULT_MODELS);
+      const blank = yield* AiConfig.pipe(
+        withEnv({ OPENROUTER_API_KEY: " ", CLOUDFLARE_ACCOUNT_ID: "", CLOUDFLARE_API_TOKEN: " " }),
+      );
+
+      for (const { openRouter, cloudflare } of [missing, blank]) {
+        assert.isTrue(Option.isNone(openRouter.apiKey));
+        assert.isTrue(Option.isNone(cloudflare.accountId));
+        assert.isTrue(Option.isNone(cloudflare.apiToken));
+      }
+
+      assert.deepStrictEqual(missing.openRouter.models, DEFAULT_OPENROUTER_MODELS);
+      assert.deepStrictEqual(missing.cloudflare.models, DEFAULT_CLOUDFLARE_MODELS);
     }));
 
-  it.effect("loads the OpenRouter key redacted and the models in order", () =>
+  it.effect("loads the AI credentials redacted and the models in order", () =>
     Effect.gen(function* () {
-      const config = yield* AiConfig.pipe(withEnv({ OPENROUTER_API_KEY: "sk-or-secret", OPENROUTER_MODELS: "a/one:free, openrouter/free" }));
+      const { openRouter, cloudflare } = yield* AiConfig.pipe(
+        withEnv({
+          OPENROUTER_API_KEY: "sk-or-secret",
+          OPENROUTER_MODELS: "a/one:free, openrouter/free",
+          CLOUDFLARE_ACCOUNT_ID: "account",
+          CLOUDFLARE_API_TOKEN: "cf-secret",
+          CLOUDFLARE_MODELS: "@cf/a/one",
+        }),
+      );
 
-      assert.deepStrictEqual(Option.map(config.apiKey, Redacted.value), Option.some("sk-or-secret"));
-      assert.deepStrictEqual(config.models, ["a/one:free", "openrouter/free"]);
+      assert.deepStrictEqual(Option.map(openRouter.apiKey, Redacted.value), Option.some("sk-or-secret"));
+      assert.deepStrictEqual(openRouter.models, ["a/one:free", "openrouter/free"]);
+      assert.deepStrictEqual(Option.map(cloudflare.accountId, Redacted.value), Option.some("account"));
+      assert.deepStrictEqual(Option.map(cloudflare.apiToken, Redacted.value), Option.some("cf-secret"));
+      assert.deepStrictEqual(cloudflare.models, ["@cf/a/one"]);
     }));
 
   it.effect("rejects a blank entry in the model list", () =>

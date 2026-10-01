@@ -28,20 +28,26 @@ const fakeModel = (name: string, reply: Reply, calls: Ref.Ref<ReadonlyArray<stri
 // Tries the models in the order given.
 const inOrder = Effect.provideService(Random.Random, { nextIntUnsafe: () => 0, nextDoubleUnsafe: () => 0.99 });
 
-const makeWriter = Effect.fnUntraced(function* (first: Reply, ...rest: ReadonlyArray<Reply>) {
+// Each provider is a list of named models and their replies.
+const makeProviders = Effect.fnUntraced(function* (
+  providers: Array.NonEmptyReadonlyArray<Array.NonEmptyReadonlyArray<readonly [string, Reply]>>,
+) {
   const calls = yield* Ref.make<ReadonlyArray<string>>([]);
 
   const writer = yield* Effect.service(HeadlineWriter).pipe(
     Effect.provide(
-      HeadlineWriter.layerModels([
-        fakeModel("model-1", first, calls),
-        ...rest.map((reply, index) => fakeModel(`model-${index + 2}`, reply, calls)),
-      ]),
+      HeadlineWriter.layerProviders(
+        Array.map(providers, (models) => Array.map(models, ([name, reply]) => fakeModel(name, reply, calls))),
+      ),
     ),
   );
 
   return { writer, write: (event: OfficeEvent) => writer.write(event).pipe(inOrder), calls: Ref.get(calls) };
 });
+
+// One provider whose models are named model-1, model-2 and so on.
+const makeWriter = (first: Reply, ...rest: ReadonlyArray<Reply>) =>
+  makeProviders([Array.map(Array.prepend(rest, first), (reply, index) => [`model-${index + 1}`, reply] as const)]);
 
 const modelDown: Reply = Effect.fail(
   AiError.make({
@@ -230,6 +236,50 @@ describe("HeadlineWriter", () => {
       assert.isTrue(perRun.every((tried) => new Set(tried).size === 5));
       assert.isAbove(firsts.filter((model) => model === "model-1").length, runs / 2);
       assert.includeMembers(firsts, ["model-2", "model-3", "model-4", "model-5"]);
+    }));
+
+  it.effect("falls back to the next provider once the first one's models fail", () =>
+    Effect.gen(function* () {
+      const { write, calls } = yield* makeProviders([
+        [
+          ["openrouter-1", modelDown],
+          ["openrouter-2", modelDown],
+        ],
+        [["cloudflare-1", good]],
+      ]);
+
+      assert.deepStrictEqual(
+        Option.map(yield* write(opened), ({ model }) => model),
+        Option.some("cloudflare-1"),
+      );
+      assert.deepStrictEqual(yield* calls, ["openrouter-1", "openrouter-2", "cloudflare-1"]);
+    }));
+
+  it.effect("may try the providers in either order", () =>
+    Effect.gen(function* () {
+      const { writer, calls } = yield* makeProviders([[["openrouter-1", good]], [["cloudflare-1", good]]]);
+
+      yield* writer.write(opened).pipe(inOrder);
+      yield* writer.write(opened).pipe(Effect.provideService(Random.Random, { nextIntUnsafe: () => 0, nextDoubleUnsafe: () => 0 }));
+
+      assert.deepStrictEqual(yield* calls, ["openrouter-1", "cloudflare-1"]);
+    }));
+
+  it.effect("skips only the rest of a provider's models at its daily limit", () =>
+    Effect.gen(function* () {
+      const { write, calls } = yield* makeProviders([
+        [
+          ["openrouter-1", dailyLimitHit],
+          ["openrouter-2", good],
+        ],
+        [["cloudflare-1", good]],
+      ]);
+
+      assert.deepStrictEqual(
+        Option.map(yield* write(opened), ({ model }) => model),
+        Option.some("cloudflare-1"),
+      );
+      assert.deepStrictEqual(yield* calls, ["openrouter-1", "cloudflare-1"]);
     }));
 
   it.effect("falls back to the fixed headlines when every model fails", () =>

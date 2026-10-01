@@ -37,6 +37,9 @@ const run = Effect.fnUntraced(function* (step: string, command: string, args: Re
   }
 });
 
+const envLine = (name: string, value: Option.Option<Redacted.Redacted<string>>): ReadonlyArray<string> =>
+  Option.toArray(Option.map(value, (secret) => `${name}=${Redacted.value(secret)}`));
+
 // Writes the service's environment file into a scoped temp directory, so the
 // secrets never land in the working tree and are deleted after the upload.
 const writeEnvFile = Effect.fnUntraced(function* () {
@@ -55,7 +58,9 @@ const writeEnvFile = Effect.fnUntraced(function* () {
       `DISCORD_BOT_TOKEN=${Redacted.value(discord.botToken)}`,
       `DISCORD_OFFICE_CHANNEL_ID=${discord.officeChannelId}`,
       `SLACK_WEBHOOK_URL=${Redacted.value(slack.webhookUrl)}`,
-      ...Option.match(ai.apiKey, { onNone: () => [], onSome: (key) => [`OPENROUTER_API_KEY=${Redacted.value(key)}`] }),
+      ...envLine("OPENROUTER_API_KEY", ai.openRouter.apiKey),
+      ...envLine("CLOUDFLARE_ACCOUNT_ID", ai.cloudflare.accountId),
+      ...envLine("CLOUDFLARE_API_TOKEN", ai.cloudflare.apiToken),
       "",
     ].join("\n"),
     { mode: 0o600 },
