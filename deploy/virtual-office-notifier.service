@@ -16,6 +16,8 @@ EnvironmentFile=/etc/virtual-office-notifier.env
 ExecStart=/usr/bin/node --enable-source-maps /opt/virtual-office-notifier/main.js
 Restart=always
 RestartSec=30s
+# Effect exits with 130 when SIGTERM interrupts it, which is a clean stop.
+SuccessExitStatus=130
 
 NoNewPrivileges=true
 PrivateTmp=true
