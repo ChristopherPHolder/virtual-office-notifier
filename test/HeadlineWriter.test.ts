@@ -1,6 +1,6 @@
 import { assert, describe, it } from "@effect/vitest";
 import { Array, Effect, Fiber, Layer, Option, Random, Ref, Schema, Stream } from "effect";
-import { AiError, LanguageModel, Model, type Response } from "effect/unstable/ai";
+import { AiError, LanguageModel, Model, type Response } from "effect/ai";
 import { TestClock } from "effect/testing";
 
 import { HeadlineWriter, OpenedReply, UnnamedReply } from "../src/HeadlineWriter.ts";

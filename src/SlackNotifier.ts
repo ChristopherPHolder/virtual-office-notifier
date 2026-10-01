@@ -6,7 +6,7 @@ import {
   HttpClientRequest,
   type HttpClientError,
   type HttpClientResponse,
-} from "effect/unstable/http";
+} from "effect/http";
 
 import { SlackConfig } from "./Config.ts";
 import { HeadlineWriter } from "./HeadlineWriter.ts";
@@ -61,10 +61,13 @@ export const isRetryable = Match.typeTags<SlackErrorReason, boolean>()({
 
 const DEFAULT_RETRY_AFTER = Duration.seconds(1);
 
+const decodeRetryAfterSeconds = Schema.decodeUnknownOption(
+  Schema.FiniteFromString.check(Schema.isGreaterThanOrEqualTo(0)),
+);
+
 const retryAfter = (headers: Headers.Headers): Duration.Duration =>
   Headers.get(headers, "retry-after").pipe(
-    Option.map(Number),
-    Option.filter((seconds) => Number.isFinite(seconds) && seconds >= 0),
+    Option.flatMap(decodeRetryAfterSeconds),
     Option.match({ onNone: () => DEFAULT_RETRY_AFTER, onSome: Duration.seconds }),
   );
 
@@ -96,19 +99,14 @@ const checkResponse = Effect.fnUntraced(function* (
   return yield* new SlackError({ reason: reasonForStatus(response, body) });
 });
 
-const describeHttpError = (error: HttpClientError.HttpClientError): string => {
-  const reason = error.reason;
-
-  return "description" in reason && reason.description !== undefined
-    ? `${reason._tag}: ${reason.description}`
-    : reason._tag;
-};
+const describeHttpError = ({ reason }: HttpClientError.HttpClientError): string =>
+  reason.description === undefined ? reason._tag : `${reason._tag}: ${reason.description}`;
 
 const transportError = (cause: string) => new SlackError({ reason: new Transport({ cause }) });
 
 // Exponential backoff from 1s with jitter, at most 4 retries. Rate-limited
 // attempts wait for Slack's Retry-After instead.
-export const retrySchedule = Schedule.exponential("1 second").pipe(
+const retrySchedule = Schedule.exponential("1 second").pipe(
   Schedule.jittered,
   Schedule.setInputType<SlackError>(),
   Schedule.modifyDelay(({ input, duration }) =>
@@ -165,7 +163,7 @@ export class SlackNotifier extends Context.Service<
     }),
   );
 
-  static readonly layer = this.layerNoDeps.pipe(
+  static readonly layer = SlackNotifier.layerNoDeps.pipe(
     Layer.provide(NodeHttpClient.layerUndici),
     Layer.provide(HeadlineWriter.layer),
   );

@@ -7,7 +7,7 @@ import { OfficeEvent, type OfficeLocation, type SessionRecap } from "./OfficeEve
 export const escapeSlackText = (text: string): string =>
   text.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
 
-export const joinLink = (office: OfficeLocation): string =>
+const joinLink = (office: OfficeLocation): string =>
   `https://discord.com/channels/${office.guildId}/${office.channelId}`;
 
 // The subset of Slack's Block Kit these messages use.
@@ -124,7 +124,7 @@ const people = (count: number): string => `${count} ${count === 1 ? "person" : "
 
 // Renders in each reader's own time zone; the fallback is for clients that can't.
 const slackTime = (at: DateTime.Utc): string =>
-  `<!date^${Math.floor(DateTime.toEpochMillis(at) / 1000)}^{time}|${DateTime.formatIso(at).slice(11, 16)} UTC>`;
+  `<!date^${DateTime.toEpochSeconds(at)}^{time}|${DateTime.formatIso(at).slice(11, 16)} UTC>`;
 
 const mrkdwn = (text: string): Mrkdwn => ({ type: "mrkdwn", text });
 

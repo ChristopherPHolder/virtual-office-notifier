@@ -1,6 +1,6 @@
 import { NodeRuntime, NodeServices } from "@effect/platform-node";
 import { Config, Effect, FileSystem, Option, Path, Redacted, Schema } from "effect";
-import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
+import { ChildProcess, ChildProcessSpawner } from "effect/process";
 
 import { AiConfig, DiscordConfig, SlackConfig } from "../src/Config.ts";
 
@@ -42,7 +42,7 @@ const envLine = (name: string, value: Option.Option<Redacted.Redacted<string>>):
 
 // Writes the service's environment file into a scoped temp directory, so the
 // secrets never land in the working tree and are deleted after the upload.
-const writeEnvFile = Effect.fnUntraced(function* () {
+const writeEnvFile = Effect.gen(function* () {
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const discord = yield* DiscordConfig;
@@ -81,7 +81,7 @@ const program = Effect.gen(function* () {
     "--ssh-key-expire-after=1h",
   ];
 
-  const envFile = yield* writeEnvFile();
+  const envFile = yield* writeEnvFile;
 
   yield* run("Bundling", "pnpm", ["build"]);
 

@@ -1,5 +1,5 @@
 import { assert, describe, it } from "@effect/vitest";
-import { ConfigProvider, Effect, Exit, Option, Redacted } from "effect";
+import { Effect, Exit, Option, Redacted } from "effect";
 
 import {
   AiConfig,
@@ -8,9 +8,7 @@ import {
   DiscordConfig,
   SlackConfig,
 } from "../src/Config.ts";
-
-const withEnv = (env: Record<string, string>) =>
-  Effect.provideService(ConfigProvider.ConfigProvider, ConfigProvider.fromEnv({ env }));
+import { withEnv } from "./fakes.ts";
 
 const failureMessage = <A, E>(exit: Exit.Exit<A, E>): string =>
   Exit.isFailure(exit) ? String(exit.cause) : "";
