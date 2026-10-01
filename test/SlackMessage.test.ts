@@ -56,6 +56,36 @@ describe("formatDuration", () => {
 });
 
 describe("formatMessage", () => {
+  it("uses a generated headline and button for an opened office and credits the model", () => {
+    const message = formatMessage(
+      OfficeEvent.Opened(member),
+      0,
+      Option.some({ template: "🛋️ {name} saved you a seat!", button: "🪑 Grab a seat", model: "nvidia/nemotron:free" }),
+    );
+
+    expect(message.text).toBe("🛋️ *Ada* saved you a seat!");
+    expect(message.blocks[0]).toMatchObject({ text: { text: "🛋️ *Ada* saved you a seat!" } });
+    expect(message.blocks[1]).toMatchObject({ elements: [{ text: { text: "🪑 Grab a seat" } }] });
+    expect(message.blocks[2]).toEqual({
+      type: "context",
+      elements: [
+        { type: "mrkdwn", text: `🔊 Opened on Discord at ${TIME}` },
+        { type: "mrkdwn", text: "✨ Headline by nvidia/nemotron:free" },
+      ],
+    });
+  });
+
+  it("escapes the generated headline, the name and the model", () => {
+    const message = formatMessage(
+      OfficeEvent.Opened({ ...member, displayName: "<!channel> $&" }),
+      0,
+      Option.some({ template: "🍪 Cookies & {name}!", button: "🍪 Grab one", model: "<!here>" }),
+    );
+
+    expect(message.text).toBe("🍪 Cookies &amp; *&lt;!channel&gt; $&amp;*!");
+    expect(message.blocks[2]).toMatchObject({ elements: [{}, { text: "✨ Headline by &lt;!here&gt;" }] });
+  });
+
   it("shows who opened the office with their avatar, a join button and the time", () => {
     expect(formatMessage(OfficeEvent.Opened(member), 0)).toEqual({
       text: "🎙️ *Ada* opened the virtual office — everyone's welcome to join!",
@@ -123,6 +153,43 @@ describe("formatMessage", () => {
     const message = formatMessage(OfficeEvent.Emptied({ ...member, recap: Option.none() }), 0);
 
     expect(JSON.stringify(message.blocks)).not.toContain("Open for");
+  });
+
+  it("uses a generated headline and button for an emptied office and credits the model", () => {
+    const message = formatMessage(
+      OfficeEvent.Emptied({ ...member, recap: Option.none() }),
+      0,
+      Option.some({ template: "🌙 The office is quiet & waiting!", button: "🔦 Light it up", model: "nvidia/nemotron:free" }),
+    );
+
+    expect(message.text).toBe("🌙 The office is quiet &amp; waiting!");
+    expect(message.blocks[1]).toMatchObject({ elements: [{ text: { text: "🔦 Light it up" } }] });
+    expect(message.blocks.at(-1)).toEqual({
+      type: "context",
+      elements: [
+        { type: "mrkdwn", text: `🔇 Emptied at ${TIME}` },
+        { type: "mrkdwn", text: "✨ Headline by nvidia/nemotron:free" },
+      ],
+    });
+  });
+
+  it("uses a generated headline and button for the reminder and credits the model", () => {
+    const message = formatMessage(
+      OfficeEvent.Reminder(reminder),
+      0,
+      Option.some({
+        template: "🦆 The rubber ducks are unionising. Come mediate!",
+        button: "🦆 Mediate",
+        model: "nvidia/nemotron:free",
+      }),
+    );
+
+    expect(message.text).toBe("🦆 The rubber ducks are unionising. Come mediate!");
+    expect(message.blocks[1]).toMatchObject({ elements: [{ text: { text: "🦆 Mediate" } }] });
+    expect(message.blocks.at(-1)).toEqual({
+      type: "context",
+      elements: [{ type: "mrkdwn", text: "✨ Headline by nvidia/nemotron:free" }],
+    });
   });
 
   it("links the reminder to the office", () => {

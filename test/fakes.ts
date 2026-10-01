@@ -7,6 +7,7 @@ import {
   HttpClientResponse,
 } from "effect/unstable/http";
 
+import { HeadlineWriter } from "../src/HeadlineWriter.ts";
 import { SlackNotifier } from "../src/SlackNotifier.ts";
 import { OfficeEvent } from "../src/OfficeEvent.ts";
 
@@ -55,7 +56,10 @@ export const requestText = (request: HttpClientRequest.HttpClientRequest): strin
 
 // A fake Slack webhook: serves the scripted replies in order, repeating the
 // last one, and records every request so tests can count attempts.
-export const makeFakeSlack = Effect.fnUntraced(function* (replies: ReadonlyArray<Reply>) {
+export const makeFakeSlack = Effect.fnUntraced(function* (
+  replies: ReadonlyArray<Reply>,
+  headlines: Layer.Layer<HeadlineWriter> = HeadlineWriter.layerFixed,
+) {
   const requests = yield* Ref.make<ReadonlyArray<HttpClientRequest.HttpClientRequest>>([]);
 
   const client = HttpClient.make((request) =>
@@ -64,7 +68,10 @@ export const makeFakeSlack = Effect.fnUntraced(function* (replies: ReadonlyArray
     ),
   );
 
-  const layer = SlackNotifier.layerNoDeps.pipe(Layer.provide(Layer.succeed(HttpClient.HttpClient, client)));
+  const layer = SlackNotifier.layerNoDeps.pipe(
+    Layer.provide(Layer.succeed(HttpClient.HttpClient, client)),
+    Layer.provide(headlines),
+  );
 
   return {
     layer,

@@ -2,7 +2,7 @@ import { NodeRuntime, NodeServices } from "@effect/platform-node";
 import { Config, Effect, FileSystem, Option, Path, Redacted, Schema } from "effect";
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 
-import { DiscordConfig, SlackConfig } from "../src/Config.ts";
+import { AiConfig, DiscordConfig, SlackConfig } from "../src/Config.ts";
 
 const APP_DIR = "/opt/virtual-office-notifier";
 
@@ -44,6 +44,7 @@ const writeEnvFile = Effect.fnUntraced(function* () {
   const path = yield* Path.Path;
   const discord = yield* DiscordConfig;
   const slack = yield* SlackConfig;
+  const ai = yield* AiConfig;
 
   const dir = yield* fs.makeTempDirectoryScoped({ prefix: `${SERVICE}-` });
   const file = path.join(dir, ENV_FILE);
@@ -54,6 +55,7 @@ const writeEnvFile = Effect.fnUntraced(function* () {
       `DISCORD_BOT_TOKEN=${Redacted.value(discord.botToken)}`,
       `DISCORD_OFFICE_CHANNEL_ID=${discord.officeChannelId}`,
       `SLACK_WEBHOOK_URL=${Redacted.value(slack.webhookUrl)}`,
+      ...Option.match(ai.apiKey, { onNone: () => [], onSome: (key) => [`OPENROUTER_API_KEY=${Redacted.value(key)}`] }),
       "",
     ].join("\n"),
     { mode: 0o600 },
