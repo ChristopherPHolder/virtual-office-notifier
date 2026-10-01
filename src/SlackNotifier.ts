@@ -9,6 +9,7 @@ import {
 } from "effect/unstable/http";
 
 import { SlackConfig } from "./Config.ts";
+import { HeadlineWriter } from "./HeadlineWriter.ts";
 import { formatMessage, type SlackMessage } from "./SlackMessage.ts";
 import type { OfficeEvent } from "./OfficeEvent.ts";
 
@@ -137,6 +138,7 @@ export class SlackNotifier extends Context.Service<
     Effect.gen(function* () {
       const { webhookUrl } = yield* SlackConfig;
       const client = yield* HttpClient.HttpClient;
+      const headlines = yield* HeadlineWriter;
 
       const post = (message: SlackMessage) =>
         HttpClientRequest.post(Redacted.value(webhookUrl)).pipe(
@@ -151,15 +153,20 @@ export class SlackNotifier extends Context.Service<
         );
 
       const notify = Effect.fn("SlackNotifier.notify")(function* (event: OfficeEvent) {
-        // Picked once, so a retry posts the same wording.
+        // Both picked once, so a retry posts the same wording.
         const variant = yield* Random.nextInt;
 
-        yield* post(formatMessage(event, variant)).pipe(Effect.retry(retrySchedule));
+        const generated = yield* headlines.write(event);
+
+        yield* post(formatMessage(event, variant, generated)).pipe(Effect.retry(retrySchedule));
       });
 
       return SlackNotifier.of({ notify });
     }),
   );
 
-  static readonly layer = this.layerNoDeps.pipe(Layer.provide(NodeHttpClient.layerUndici));
+  static readonly layer = this.layerNoDeps.pipe(
+    Layer.provide(NodeHttpClient.layerUndici),
+    Layer.provide(HeadlineWriter.layer),
+  );
 }

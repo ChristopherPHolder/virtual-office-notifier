@@ -54,18 +54,22 @@ export interface SlackMessage {
   readonly blocks: ReadonlyArray<Block>;
 }
 
-type Variants = readonly [string, ...Array<string>];
+export type Variants = readonly [string, ...Array<string>];
 
 const pick = (variants: Variants, variant: number): string =>
   variants[Math.abs(variant) % variants.length] ?? variants[0];
 
-const openedHeadlines = (name: string): Variants => [
+export const openedHeadlines = (name: string): Variants => [
   `🎙️ ${name} opened the virtual office — everyone's welcome to join!`,
   `☕ ${name} just walked into the virtual office. Come say hi!`,
   `🚪 The virtual office is open and ${name} is in. Pull up a chair!`,
 ];
 
-const emptiedHeadlines: Variants = [
+export const JOIN_LABEL = "🎧 Join the office";
+
+export const JUMP_IN_LABEL = "🎧 Jump in";
+
+export const emptiedHeadlines: Variants = [
   "🪑 The virtual office is empty right now — jump in and get it going!",
   "🌙 Everyone's headed out of the virtual office. Be the first one back!",
   "💤 The virtual office has gone quiet. Drop in and wake it up!",
@@ -148,7 +152,7 @@ const joinButton = (office: OfficeLocation, label: string): ActionsBlock => ({
   ],
 });
 
-const context = (text: string): ContextBlock => ({ type: "context", elements: [mrkdwn(text)] });
+const context = (...texts: ReadonlyArray<string>): ContextBlock => ({ type: "context", elements: texts.map(mrkdwn) });
 
 const recapFields = (recap: SessionRecap): SectionBlock => ({
   type: "section",
@@ -158,40 +162,74 @@ const recapFields = (recap: SessionRecap): SectionBlock => ({
   ],
 });
 
-// `variant` picks one of the phrasings, so repeated posts don't all read the same.
-// Reminders ignore it and rotate by date instead, so every phrasing comes up
-// once before any repeats.
-export const formatMessage = (event: OfficeEvent, variant: number): SlackMessage =>
+export const NAME_PLACEHOLDER = "{name}";
+
+export interface GeneratedHeadline {
+  // For an opened office, has NAME_PLACEHOLDER where the opener's name goes.
+  readonly template: string;
+  readonly button: string;
+  readonly model: string;
+}
+
+// The model's output isn't trusted, so it's escaped; the name already is.
+const headlineText = (generated: Option.Option<GeneratedHeadline>, fixed: () => string, name = ""): string =>
+  Option.match(generated, {
+    onNone: fixed,
+    onSome: ({ template }) => escapeSlackText(template).replace(NAME_PLACEHOLDER, () => name),
+  });
+
+const buttonLabel = (generated: Option.Option<GeneratedHeadline>, fixed: string): string =>
+  Option.match(generated, { onNone: () => fixed, onSome: ({ button }) => button });
+
+const credit = (generated: Option.Option<GeneratedHeadline>): Option.Option<string> =>
+  Option.map(generated, ({ model }) => `✨ Headline by ${escapeSlackText(model)}`);
+
+// `variant` picks one of the fixed phrasings, so repeated posts don't all read
+// the same. Reminders ignore it and rotate by date instead, so every phrasing
+// comes up once before any repeats.
+export const formatMessage = (
+  event: OfficeEvent,
+  variant: number,
+  generated: Option.Option<GeneratedHeadline> = Option.none(),
+): SlackMessage =>
   OfficeEvent.$match(event, {
     Opened: (member) => {
-      const text = pick(openedHeadlines(`*${escapeSlackText(member.displayName)}*`), variant);
+      const name = `*${escapeSlackText(member.displayName)}*`;
+      const text = headlineText(generated, () => pick(openedHeadlines(name), variant), name);
       const avatar = Option.map(Option.fromNullOr(member.avatarUrl), (url) => ({ url, name: member.displayName }));
 
       return {
         text,
         blocks: [
           headline(text, avatar),
-          joinButton(member, "🎧 Join the office"),
-          context(`🔊 Opened on Discord at ${slackTime(member.at)}`),
+          joinButton(member, buttonLabel(generated, JOIN_LABEL)),
+          context(`🔊 Opened on Discord at ${slackTime(member.at)}`, ...Option.toArray(credit(generated))),
         ],
       };
     },
     Emptied: (member) => {
-      const text = pick(emptiedHeadlines, variant);
+      const text = headlineText(generated, () => pick(emptiedHeadlines, variant));
 
       return {
         text,
         blocks: [
           headline(text, Option.none()),
           ...Option.match(member.recap, { onNone: () => [], onSome: (recap) => [recapFields(recap)] }),
-          joinButton(member, "🎧 Jump in"),
-          context(`🔇 Emptied at ${slackTime(member.at)}`),
+          joinButton(member, buttonLabel(generated, JUMP_IN_LABEL)),
+          context(`🔇 Emptied at ${slackTime(member.at)}`, ...Option.toArray(credit(generated))),
         ],
       };
     },
     Reminder: (office) => {
-      const text = pick(reminderHeadlines, weekdaysSinceEpoch(office.at));
+      const text = headlineText(generated, () => pick(reminderHeadlines, weekdaysSinceEpoch(office.at)));
 
-      return { text, blocks: [headline(text, Option.none()), joinButton(office, "🎧 Join the office")] };
+      return {
+        text,
+        blocks: [
+          headline(text, Option.none()),
+          joinButton(office, buttonLabel(generated, JOIN_LABEL)),
+          ...Option.toArray(Option.map(credit(generated), context)),
+        ],
+      };
     },
   });

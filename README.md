@@ -41,8 +41,18 @@ All configuration comes from environment variables. Copy `.env.example` to `.env
 | `DISCORD_BOT_TOKEN` | Bot token from the Discord Developer Portal. Secret. |
 | `DISCORD_OFFICE_CHANNEL_ID` | ID of the office voice channel (Developer Mode → right-click the channel → Copy Channel ID). |
 | `SLACK_WEBHOOK_URL` | Slack Incoming Webhook URL. Secret: anyone with it can post to the channel. |
+| `OPENROUTER_API_KEY` | Optional. [OpenRouter](https://openrouter.ai/settings/keys) API key for AI-written headlines. Secret. Without it, the fixed headlines are used. |
+| `OPENROUTER_MODELS` | Optional. Comma-separated OpenRouter models to try, preferred first. Defaults to a list of free models (see `DEFAULT_MODELS` in `src/Config.ts`). |
 
 The process exits at startup with an error naming the variable if one is missing.
+
+### AI headlines
+
+Every message (office opened, office emptied and the weekday reminder) gets a fresh headline and join button label from a free model on OpenRouter, and the card credits the model that wrote them. The model never sees anyone's name: for an opened office it writes a `{name}` placeholder that's filled in afterwards, and the other messages don't name anyone. Each reply is checked (a headline line and a button label line, the placeholder exactly once for an opened office and not at all otherwise, no Slack link syntax, at most 160 characters for the headline and 30 for the label) and escaped before it's posted.
+
+Each message tries the models one at a time in a random order. The first model in the list (`openrouter/free` by default, which lets OpenRouter choose any free model that's up) goes first at least half the time. A model that fails, takes longer than a minute, or replies with something unusable is skipped for the next one, and each skip is logged with the model and the reason. If OpenRouter says the key's daily free limit is used up (50 requests a day without credits, 1,000 with at least $10 of credit), the remaining models are skipped, since they'd all be refused too. If there's no key or every model fails, the post goes out with the fixed headline and label instead.
+
+Free models come and go on OpenRouter. To change the list, pick from the [free models](https://openrouter.ai/models?max_price=0) and set `OPENROUTER_MODELS`, preferred model first.
 
 ### Discord bot
 
@@ -118,6 +128,7 @@ This creates a `github-deploy` service account, a Workload Identity pool trustin
 | `GCP_WORKLOAD_IDENTITY_PROVIDER` | The Workload Identity provider created above |
 | `GCP_SERVICE_ACCOUNT` | The `github-deploy` service account email |
 | `DISCORD_BOT_TOKEN`, `DISCORD_OFFICE_CHANNEL_ID`, `SLACK_WEBHOOK_URL` | Your local `.env` |
+| `OPENROUTER_API_KEY` | Optional, your local `.env` |
 
 GitHub secrets are the source of truth for the app's configuration. To change a value, update the secret and re-run the latest `CI` workflow on `main`:
 
@@ -127,7 +138,7 @@ gh secret set SLACK_WEBHOOK_URL
 
 ### What a deploy does
 
-`scripts/deploy.ts` bundles the app, writes the env file from the three variables, copies `dist/main.js`, its source map, the systemd unit and the env file to the VM, installs them under `/opt/virtual-office-notifier` and `/etc`, reloads systemd and restarts the service. It then waits 15 seconds and fails, printing the last log lines, if the service isn't running.
+`scripts/deploy.ts` bundles the app, writes the env file from the configuration variables, copies `dist/main.js`, its source map, the systemd unit and the env file to the VM, installs them under `/opt/virtual-office-notifier` and `/etc`, reloads systemd and restarts the service. It then waits 15 seconds and fails, printing the last log lines, if the service isn't running.
 
 To deploy by hand from your machine:
 

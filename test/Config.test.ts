@@ -1,7 +1,7 @@
 import { assert, describe, it } from "@effect/vitest";
-import { ConfigProvider, Effect, Exit, Redacted } from "effect";
+import { ConfigProvider, Effect, Exit, Option, Redacted } from "effect";
 
-import { DiscordConfig, SlackConfig } from "../src/Config.ts";
+import { AiConfig, DEFAULT_MODELS, DiscordConfig, SlackConfig } from "../src/Config.ts";
 
 const withEnv = (env: Record<string, string>) =>
   Effect.provideService(ConfigProvider.ConfigProvider, ConfigProvider.fromEnv({ env }));
@@ -37,5 +37,30 @@ describe("Config", () => {
 
       assert.isTrue(Exit.isFailure(exit));
       assert.include(failureMessage(exit), "SLACK_WEBHOOK_URL");
+    }));
+
+  it.effect("treats a missing or blank OpenRouter key as no key, with free default models", () =>
+    Effect.gen(function* () {
+      const missing = yield* AiConfig.pipe(withEnv({}));
+      const blank = yield* AiConfig.pipe(withEnv({ OPENROUTER_API_KEY: " " }));
+
+      assert.isTrue(Option.isNone(missing.apiKey));
+      assert.isTrue(Option.isNone(blank.apiKey));
+      assert.deepStrictEqual(missing.models, DEFAULT_MODELS);
+    }));
+
+  it.effect("loads the OpenRouter key redacted and the models in order", () =>
+    Effect.gen(function* () {
+      const config = yield* AiConfig.pipe(withEnv({ OPENROUTER_API_KEY: "sk-or-secret", OPENROUTER_MODELS: "a/one:free, openrouter/free" }));
+
+      assert.deepStrictEqual(Option.map(config.apiKey, Redacted.value), Option.some("sk-or-secret"));
+      assert.deepStrictEqual(config.models, ["a/one:free", "openrouter/free"]);
+    }));
+
+  it.effect("rejects a blank entry in the model list", () =>
+    Effect.gen(function* () {
+      const exit = yield* AiConfig.pipe(withEnv({ OPENROUTER_MODELS: "a/one:free,," }), Effect.exit);
+
+      assert.include(failureMessage(exit), "OPENROUTER_MODELS");
     }));
 });

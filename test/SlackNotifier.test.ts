@@ -1,7 +1,8 @@
 import { assert, describe, it } from "@effect/vitest";
-import { Effect, Fiber, Random } from "effect";
+import { Effect, Fiber, Layer, Random } from "effect";
 import { TestClock } from "effect/testing";
 
+import { HeadlineWriter } from "../src/HeadlineWriter.ts";
 import {
   InvalidPayload,
   SlackNotifier,
@@ -24,8 +25,11 @@ import {
   withEnv,
 } from "./fakes.ts";
 
-const makeSlack = Effect.fnUntraced(function* (replies: ReadonlyArray<Reply>) {
-  const fake = yield* makeFakeSlack(replies);
+const makeSlack = Effect.fnUntraced(function* (
+  replies: ReadonlyArray<Reply>,
+  headlines?: Layer.Layer<HeadlineWriter>,
+) {
+  const fake = yield* makeFakeSlack(replies, headlines);
 
   const notifier = yield* Effect.service(SlackNotifier).pipe(
     Effect.provide(fake.layer),
@@ -46,6 +50,23 @@ describe("SlackNotifier", () => {
       assert.strictEqual(requests.length, 1);
       assert.strictEqual(requests[0]?.url, WEBHOOK_URL);
       assert.deepStrictEqual(JSON.parse(requestText(requests[0]!)), formatMessage(opened, 0));
+    }));
+
+  it.effect("posts a generated headline when the office opens", () =>
+    Effect.gen(function* () {
+      const generated = Layer.succeed(
+        HeadlineWriter,
+        HeadlineWriter.of({
+          write: () => Effect.succeedSome({ template: "🛋️ {name} saved you a seat!", button: "🪑 Grab a seat", model: "test/model" }),
+        }),
+      );
+
+      const slack = yield* makeSlack([ok], generated);
+
+      yield* slack.notifier.notify(opened);
+
+      const [request] = yield* slack.requests;
+      assert.strictEqual(JSON.parse(requestText(request!)).text, "🛋️ *Ada* saved you a seat!");
     }));
 
   it.effect("posts the same wording on every retry", () =>
