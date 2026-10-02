@@ -1,0 +1,37 @@
+name: Bug report
+description: Something posted wrong, didn't post, or crashed.
+labels: [bug]
+body:
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What did you see in Slack or Discord, and roughly when?
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: How to reproduce
+      description: Who joined or left the office, in what order, and whether anyone was already in it.
+      placeholder: |
+        1. Ada joins the empty office
+        2. Grace joins
+        3. Ada leaves
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: Relevant log lines, if you have them. Remove tokens, webhook URLs and API keys first.
+      render: text
+  - type: input
+    id: commit
+    attributes:
+      label: Commit
+      description: The commit you were running, if it wasn't the latest `main`.

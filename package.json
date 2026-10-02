@@ -13,8 +13,8 @@
     "prepare": "effect-tsgo patch --typescript"
   },
   "keywords": [],
-  "author": "",
-  "license": "ISC",
+  "author": "Christopher Holder",
+  "license": "0BSD",
   "packageManager": "pnpm@10.15.0",
   "dependencies": {
     "@effect/ai-openai-compat": "4.0.0",
