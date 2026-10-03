@@ -17,6 +17,9 @@ importers:
       '@effect/platform-node':
         specifier: 4.0.0
         version: 4.0.0(effect@4.0.0)(redis@6.2.1)
+      '@effect/sql-pg':
+        specifier: 4.0.0
+        version: 4.0.0(effect@4.0.0)
       discord.js:
         specifier: 14.27.0
         version: 14.27.0
@@ -24,6 +27,9 @@ importers:
         specifier: 4.0.0
         version: 4.0.0
     devDependencies:
+      '@effect/sql-pglite':
+        specifier: 4.0.0
+        version: 4.0.0(effect@4.0.0)
       '@effect/tsgo':
         specifier: 0.47.2
         version: 0.47.2
@@ -102,6 +108,16 @@ packages:
       effect: ^4.0.0
       redis: '>=5.0.0 <7.0.0'
 
+  '@effect/sql-pg@4.0.0':
+    resolution: {integrity: sha512-w0sRMA08Tgz73aReYpFSxD+nz2LUKYhH/4zaRpo4G5b5YG+eqiAL7XYhqIjvGZ8MZacazbG71Jhprv6ccz9HDg==}
+    peerDependencies:
+      effect: ^4.0.0
+
+  '@effect/sql-pglite@4.0.0':
+    resolution: {integrity: sha512-BTlCPSipKMHZJEoJ94rR4f8Gx8cv8tLpZeHc3sajg2ko/2GY8s6CyycSra3Z6GLFUhcivRTYQ9Zc5LThz64qfQ==}
+    peerDependencies:
+      effect: ^4.0.0
+
   '@effect/tsgo-darwin-arm64@0.47.2':
     resolution: {integrity: sha512-sLYKt201VdTjSHG3rbyIdpLMNGEMiArm0OgO7kYfnA0yRV0ux0blgcucf97bx90gIvDJFSSL17QCSDPGs9jsKQ==}
     cpu: [arm64]
@@ -146,6 +162,9 @@ packages:
     peerDependencies:
       effect: ^4.0.0
       vitest: '>=5.0.0 <6.0.0'
+
+  '@electric-sql/pglite@0.5.8':
+    resolution: {integrity: sha512-n9tsbUOhwx2epK1V0ZG9Ar4SHWUju04dhmzZXiSBXwBoleOvIfals33NAaWgagQVAL4Rbvx/Ptsu3P+pA09f6Q==}
 
   '@jridgewell/resolve-uri@3.1.2':
     resolution: {integrity: sha512-bRISgCIjP20/tbWSPWMEi54QVPRZExkuD9lJL+UIxUKtwVJA8wW1Trb1jMs1RFXo1CBTNZ/5hpC9QvmKWdopKw==}
@@ -987,6 +1006,15 @@ snapshots:
       - bufferutil
       - utf-8-validate
 
+  '@effect/sql-pg@4.0.0(effect@4.0.0)':
+    dependencies:
+      effect: 4.0.0
+
+  '@effect/sql-pglite@4.0.0(effect@4.0.0)':
+    dependencies:
+      '@electric-sql/pglite': 0.5.8
+      effect: 4.0.0
+
   '@effect/tsgo-darwin-arm64@0.47.2':
     optional: true
 
@@ -1022,6 +1050,8 @@ snapshots:
     dependencies:
       effect: 4.0.0
       vitest: 5.0.1(@types/node@26.6.2)(vite@8.3.1(@types/node@26.6.2))
+
+  '@electric-sql/pglite@0.5.8': {}
 
   '@jridgewell/resolve-uri@3.1.2': {}
 

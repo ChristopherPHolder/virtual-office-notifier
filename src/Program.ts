@@ -1,5 +1,6 @@
 import { Effect, Layer, Option, Stream } from "effect";
 
+import { DatabaseLive } from "./Database.ts";
 import { DiscordGateway } from "./DiscordGateway.ts";
 import { OfficeEvent } from "./OfficeEvent.ts";
 import { reminders } from "./Reminder.ts";
@@ -42,5 +43,8 @@ export const program = Effect.gen(function* () {
 });
 
 // Slack is built first, so a missing webhook URL fails before logging in to
-// Discord.
-export const MainLayer = DiscordGateway.layer.pipe(Layer.provideMerge(SlackNotifier.layer));
+// Discord. The database connects in the background and never fails startup.
+export const MainLayer = DiscordGateway.layer.pipe(
+  Layer.provideMerge(SlackNotifier.layer),
+  Layer.merge(DatabaseLive),
+);

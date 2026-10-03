@@ -53,3 +53,9 @@ export const AiConfig = Config.all({
     models: modelList("CLOUDFLARE_MODELS", DEFAULT_CLOUDFLARE_MODELS),
   }),
 });
+
+// Optional, so local runs don't write to the production database unless asked
+// to. Without it, nothing is recorded.
+export const DatabaseConfig = Config.all({
+  url: optionalSecret("DATABASE_URL"),
+});

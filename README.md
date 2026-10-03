@@ -91,6 +91,9 @@ Events are handled one at a time, so one that arrives while a Slack post is bein
 | [`src/HeadlineWriter.ts`](src/HeadlineWriter.ts) | Asks the AI providers for a headline and button label, and checks the reply. |
 | [`src/SlackMessage.ts`](src/SlackMessage.ts) | Builds the Block Kit message, including the fixed phrasings. |
 | [`src/SlackNotifier.ts`](src/SlackNotifier.ts) | Posts to the webhook, with retries and error classification. |
+| [`src/Database.ts`](src/Database.ts) | Connects to Postgres and runs the migrations in the background, retrying until it works. |
+| [`src/migrations.ts`](src/migrations.ts) | The database migrations, bundled into the app. |
+| [`src/SupabaseCa.ts`](src/SupabaseCa.ts) | Supabase's root certificate, which Node doesn't trust by default. |
 | [`src/Config.ts`](src/Config.ts) | Environment variables and the default model lists. |
 
 ## Getting started
@@ -124,8 +127,9 @@ All configuration comes from environment variables. Copy `.env.example` to `.env
 | `CLOUDFLARE_ACCOUNT_ID` | No | Cloudflare account ID, for AI headlines from Workers AI. Needs `CLOUDFLARE_API_TOKEN` too. |
 | `CLOUDFLARE_API_TOKEN` | No | Workers AI API token. Secret. |
 | `CLOUDFLARE_MODELS` | No | Comma-separated Workers AI models to try, preferred first. Defaults to `DEFAULT_CLOUDFLARE_MODELS` in [`src/Config.ts`](src/Config.ts), all within the free daily allocation. |
+| `DATABASE_URL` | No | Supabase session pooler connection string, for the [database](#database). Secret. Without it, nothing is stored. |
 
-The process exits at startup with an error naming the variable if a required one is missing. A blank optional key or account ID counts as unset.
+The process exits at startup with an error naming the variable if a required one is missing. A blank optional key, account ID or database URL counts as unset.
 
 `OPENROUTER_MODELS` and `CLOUDFLARE_MODELS` aren't passed through the deploy, so production always uses the defaults. Change those in `src/Config.ts`.
 
@@ -172,6 +176,25 @@ Free models come and go on OpenRouter. To change the list, pick from the [free m
 3. Copy the **Account ID** from the same page into `CLOUDFLARE_ACCOUNT_ID`.
 
 Workers AI includes 10,000 Neurons a day for free, which covers a few hundred headlines on the default models.
+
+### Database
+
+Optional, and not used for anything yet. It's the groundwork for recording office voice activity ([#10](https://github.com/ChristopherPHolder/virtual-office-notifier/issues/10)). The bot connects to a Postgres database on [Supabase](https://supabase.com) and keeps everything in an `office` schema, out of the `public` schema that Supabase serves through its REST API.
+
+1. Create a project at <https://supabase.com/dashboard>.
+2. Click **Connect**, pick the **Session pooler** connection string, and put it in `DATABASE_URL` with the database password filled in. Percent-encode any special characters in the password.
+
+Use the session pooler, not the direct connection: the direct one is IPv6-only unless the project has the IPv4 add-on, and GCP VMs only have IPv4 by default. The transaction pooler (port 6543) doesn't support the prepared statements the client uses.
+
+The database can never stop the announcements:
+
+- Connecting happens in the background after startup, so the bot runs normally while it's down.
+- If it can't connect or run the migrations, it retries in bursts of 5 attempts 1, 2, 4, 8 and 16 seconds apart, then waits an hour before the next burst. Each failed attempt is logged with what went wrong.
+- Once it's connected, it logs `Connected to the database`.
+
+Migrations live in [`src/migrations.ts`](src/migrations.ts) and run once each on the first successful connection. They only ever add tables and columns. Nothing stored is ever deleted.
+
+The connection is encrypted and checked against Supabase's own root certificate in [`src/SupabaseCa.ts`](src/SupabaseCa.ts), which expires in April 2031.
 
 ## Development
 
@@ -241,7 +264,7 @@ This creates a `github-deploy` service account and a Workload Identity pool trus
 | `GCP_WORKLOAD_IDENTITY_PROVIDER` | The Workload Identity provider created above |
 | `GCP_SERVICE_ACCOUNT` | The `github-deploy` service account email |
 | `DISCORD_BOT_TOKEN`, `DISCORD_OFFICE_CHANNEL_ID`, `SLACK_WEBHOOK_URL` | Your local `.env` |
-| `OPENROUTER_API_KEY`, `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN` | Optional, your local `.env` |
+| `OPENROUTER_API_KEY`, `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN`, `DATABASE_URL` | Optional, your local `.env` |
 
 GitHub secrets are the source of truth for the app's configuration. To change a value, update the secret and re-run the latest `CI` workflow on `main`:
 
@@ -278,6 +301,7 @@ There's no monitoring or alerting. If announcements stop, check the logs.
 | Every announcement shows up twice | Two copies are running, for example `pnpm dev` with the production token and webhook. |
 | `Slack rejected the post` with `WebhookRevoked` | The webhook was removed or the Slack app uninstalled. Create a new webhook and update `SLACK_WEBHOOK_URL`. |
 | Posts always use the fixed headlines | Every AI model is failing. Look for `AI model couldn't write a headline` warnings and their reason. `DailyLimit` means the OpenRouter key has used up its free requests for the day. |
+| `Couldn't set up the database, retrying` in the logs | The bot can't reach the database or run the migrations. The `reason` says why, for example a wrong password in `DATABASE_URL` or a paused Supabase project. Announcements carry on regardless. |
 | The service has stopped and isn't restarting | systemd gave up after 5 failed starts in 10 minutes. Check the logs, then merge a fix, or update the secret and re-run the latest `CI` workflow on `main`. |
 
 ## Privacy

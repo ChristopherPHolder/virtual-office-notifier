@@ -3,6 +3,7 @@ import { Effect, Exit, Option, Redacted } from "effect";
 
 import {
   AiConfig,
+  DatabaseConfig,
   DEFAULT_CLOUDFLARE_MODELS,
   DEFAULT_OPENROUTER_MODELS,
   DiscordConfig,
@@ -78,6 +79,24 @@ describe("Config", () => {
       assert.deepStrictEqual(Option.map(cloudflare.accountId, Redacted.value), Option.some("account"));
       assert.deepStrictEqual(Option.map(cloudflare.apiToken, Redacted.value), Option.some("cf-secret"));
       assert.deepStrictEqual(cloudflare.models, ["@cf/a/one"]);
+    }));
+
+  it.effect("treats a missing or blank database URL as unset", () =>
+    Effect.gen(function* () {
+      for (const env of [{}, { DATABASE_URL: " " }]) {
+        const { url } = yield* DatabaseConfig.pipe(withEnv(env));
+
+        assert.isTrue(Option.isNone(url));
+      }
+    }));
+
+  it.effect("loads the database URL redacted", () =>
+    Effect.gen(function* () {
+      const databaseUrl = "postgresql://postgres.ref:secret@aws-0-eu-central-1.pooler.supabase.com:5432/postgres";
+      const { url } = yield* DatabaseConfig.pipe(withEnv({ DATABASE_URL: databaseUrl }));
+
+      assert.deepStrictEqual(Option.map(url, Redacted.value), Option.some(databaseUrl));
+      assert.notInclude(String(url), "secret");
     }));
 
   it.effect("rejects a blank entry in the model list", () =>
