@@ -37,7 +37,9 @@ coverage/
 
 # Claude Code (local, per-user settings)
 .claude/settings.local.json
+.claude/worktrees
 
 # OS
 .DS_Store
 Thumbs.db
+
