@@ -45,6 +45,7 @@ The app is built on [Effect](https://effect.website) v4. Follow the patterns alr
 - Configuration is read through `Config` in [`src/Config.ts`](src/Config.ts). Secrets are `Redacted` and never logged. Watch out for errors that carry a request URL, since the webhook URL is itself a secret.
 - Anything posted to Slack that comes from outside, like a Discord display name or AI output, goes through `escapeSlackText`, so it can't ping `@channel` or post links.
 - Names are never sent to the AI providers.
+- A failure worth an alert is reported to Sentry with `Effect.withErrorReporting` or `ErrorReporter.report`, before it's caught. Set its severity with `[ErrorReporter.severity]`.
 - Comments explain why, not what.
 
 There's no separate formatter. `pnpm lint` runs oxlint with the vendored [anti-slop](tools/oxlint/anti-slop/UPSTREAM.md) rules, and `pnpm lint:fix` applies the fixes it can.

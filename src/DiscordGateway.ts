@@ -1,4 +1,16 @@
-import { type Cause, Context, DateTime, Effect, Layer, Option, Queue, Redacted, Schema, Stream } from "effect";
+import {
+  Cause,
+  Context,
+  DateTime,
+  Effect,
+  ErrorReporter,
+  Layer,
+  Option,
+  Queue,
+  Redacted,
+  Schema,
+  Stream,
+} from "effect";
 import { Client, Events, GatewayIntentBits, type GuildMember, type VoiceState } from "discord.js";
 
 import { DiscordConfig } from "./Config.ts";
@@ -122,7 +134,9 @@ export class DiscordGateway extends Context.Service<
       );
 
       // An EventEmitter "error" event with no listener would crash the process.
-      client.on(Events.Error, (error) => runFork(Effect.logError("Discord client error", error)));
+      client.on(Events.Error, (error) =>
+        runFork(Effect.logError("Discord client error", error).pipe(Effect.andThen(ErrorReporter.report(Cause.fail(error))))),
+      );
       client.on(Events.Warn, (message) => runFork(Effect.logWarning("Discord client warning", message)));
 
       const ready = yield* login(client, botToken);

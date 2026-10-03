@@ -26,6 +26,7 @@ Posts to Slack when someone opens our Discord "virtual office" voice channel, an
 - **Restart-safe.** It counts whoever is already in the channel at startup, so a restart mid-session doesn't announce the office opening again.
 - **Keeps going when Slack doesn't.** Failed posts are retried with backoff and logged, and never crash the process.
 - **Records voice activity** in the office channel to a [database](#database): joins, leaves, mute, deafen, camera and streaming, exactly as Discord reports them. The database can never stop the announcements.
+- **Optional Sentry monitoring** of errors, traces and logs.
 
 ## What it posts
 
@@ -104,6 +105,7 @@ Recording runs alongside, in its own fiber, so a slow Slack post never holds it 
 | [`src/migrations.ts`](src/migrations.ts) | The tables and the `voice_activity` view, bundled into the app. |
 | [`src/SupabaseCa.ts`](src/SupabaseCa.ts) | Supabase's root certificate, which Node doesn't trust by default. |
 | [`src/Config.ts`](src/Config.ts) | Environment variables and the default model lists. |
+| [`src/Observability.ts`](src/Observability.ts) | Sends errors, traces and logs to Sentry when it's configured. |
 
 ## Getting started
 
@@ -137,6 +139,9 @@ All configuration comes from environment variables. Copy `.env.example` to `.env
 | `CLOUDFLARE_API_TOKEN` | No | Workers AI API token. Secret. |
 | `CLOUDFLARE_MODELS` | No | Comma-separated Workers AI models to try, preferred first. Defaults to `DEFAULT_CLOUDFLARE_MODELS` in [`src/Config.ts`](src/Config.ts), all within the free daily allocation. |
 | `DATABASE_URL` | Deploys only | Supabase session pooler connection string, for the [database](#database). Secret. Optional locally, where leaving it out records nothing; the deploy fails without it. |
+| `SENTRY_DSN` | No | [Sentry](#monitoring) project DSN. Without it, nothing is sent to Sentry. |
+| `SENTRY_ENVIRONMENT` | No | Environment to tag Sentry data with. Defaults to `development`; the deploy sets `production`. |
+| `SENTRY_RELEASE` | No | Release to tag Sentry data with. The deploy sets it to the commit SHA. |
 
 The process exits at startup with an error naming the variable if a required one is missing. A blank optional key, account ID or database URL counts as unset.
 
@@ -302,7 +307,7 @@ This creates a `github-deploy` service account and a Workload Identity pool trus
 | `GCP_SERVICE_ACCOUNT` | The `github-deploy` service account email |
 | `DISCORD_BOT_TOKEN`, `DISCORD_OFFICE_CHANNEL_ID`, `SLACK_WEBHOOK_URL` | Your local `.env` |
 | `DATABASE_URL` | The Supabase session pooler connection string. See [Database](#database). |
-| `OPENROUTER_API_KEY`, `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN` | Optional, your local `.env` |
+| `OPENROUTER_API_KEY`, `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN`, `SENTRY_DSN` | Optional, your local `.env` |
 
 GitHub secrets are the source of truth for the app's configuration. To change a value, update the secret and re-run the latest `CI` workflow on `main`:
 
@@ -328,7 +333,19 @@ The [unit](deploy/virtual-office-notifier.service) runs as the unprivileged `not
 gcloud compute ssh virtual-office-notifier --zone=us-central1-a -- journalctl -u virtual-office-notifier -f
 ```
 
-There's no monitoring or alerting. If announcements stop, check the logs.
+### Monitoring
+
+With `SENTRY_DSN` set, the app sends errors, traces and logs to [Sentry](https://sentry.io) through [`@sentry/effect`](https://docs.sentry.io/platforms/javascript/guides/effect/). Everything still goes to the journal as well.
+
+- **Issues.** A crash, including at startup, is an error. A Slack post that only failed after retries is a warning; a revoked webhook or rejected payload is an error. Discord client errors are errors, and every AI model failing to write a headline is a warning.
+- **Traces.** Each announcement is its own trace: the Slack post with each attempt, and the AI model calls. HTTP client spans are turned off, because they'd record the webhook URL, which is a secret.
+- **Logs.** Every log line, linked to the trace it was logged in. Only the message is sent, not the annotations.
+
+To turn it on, create a Node.js project in Sentry and set its DSN as a secret, then re-run the latest `CI` workflow on `main`:
+
+```bash
+gh secret set SENTRY_DSN
+```
 
 ## Troubleshooting
 
@@ -352,6 +369,8 @@ This broadcasts people's presence to a wider audience. The opening post shows wh
 The AI providers only get the instructions and a few example headlines, never names or anything else from Discord.
 
 The [database](#database) keeps a detailed record of each person's activity in the office channel: when they joined and left, and when they muted, deafened, turned on their camera or streamed, with their Discord user ID and display name, and a real name if one is filled in. Nothing is ever deleted. Tell the team it's being recorded before turning it on.
+
+Sentry, when it's configured, gets error reports, timings, database queries without their values, and log messages without their annotations, so no names or Discord user IDs. User IDs are also redacted in the announcement logs; an update the database couldn't store is logged in full, but only to the journal.
 
 ## Contributing
 

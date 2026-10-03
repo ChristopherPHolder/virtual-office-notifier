@@ -1,5 +1,5 @@
 import { assert, describe, it } from "@effect/vitest";
-import { Array, Effect, Fiber, Layer, Option, Random, Ref, Schema, Stream } from "effect";
+import { Array, Effect, ErrorReporter, Fiber, Layer, Option, Random, Ref, Schema, Stream } from "effect";
 import { AiError, LanguageModel, Model, type Response } from "effect/ai";
 import { TestClock } from "effect/testing";
 
@@ -288,6 +288,27 @@ describe("HeadlineWriter", () => {
 
       assert.isTrue(Option.isNone(yield* write(opened)));
       assert.deepStrictEqual(yield* calls, ["model-1", "model-2"]);
+    }));
+
+  it.effect("reports a warning when every model fails, but not when one succeeds", () =>
+    Effect.gen(function* () {
+      const reports: Array<{ readonly message: string; readonly severity: string }> = [];
+
+      const reporter = ErrorReporter.layer([
+        ErrorReporter.make(({ error, severity }) => {
+          reports.push({ message: error.message, severity });
+        }),
+      ]);
+
+      const failing = yield* makeWriter(modelDown, dailyLimitHit);
+      yield* failing.write(opened).pipe(Effect.provide(reporter));
+
+      const working = yield* makeWriter(modelDown, good);
+      yield* working.write(opened).pipe(Effect.provide(reporter));
+
+      assert.deepStrictEqual(reports, [
+        { message: "No AI model could write a headline, the last failed with DailyLimit", severity: "Warn" },
+      ]);
     }));
 
   it.effect("starts from the first model again on the next headline", () =>
