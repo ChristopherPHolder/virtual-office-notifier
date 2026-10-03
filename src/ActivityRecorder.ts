@@ -5,17 +5,20 @@ import {
   DateTime,
   Duration,
   Effect,
+  ErrorReporter,
   Fiber,
   Layer,
+  type LogLevel,
   Option,
   Queue,
   Ref,
   Schedule,
+  Schema,
 } from "effect";
 
 import { ActivityLog, ActivityLogError, Outage } from "./ActivityLog.ts";
 import { DatabaseConfig } from "./Config.ts";
-import { Database, describeError, reconnectSchedule } from "./Database.ts";
+import { Database, DatabaseUnavailable, describeError, reconnectSchedule } from "./Database.ts";
 import type { VoiceObservation } from "./VoiceObservation.ts";
 
 // Many days of office traffic, and a few MB at most.
@@ -36,10 +39,57 @@ export type Entry = Data.TaggedEnum<{
 
 export const Entry = Data.taggedEnum<Entry>();
 
+// The errors reported to Sentry carry what went wrong, never the entry, since
+// that holds people's names and IDs.
+
+// An update that only made it into the journal.
+export class UpdateNotStored extends Schema.TaggedError<UpdateNotStored>()("UpdateNotStored", {
+  message: Schema.String,
+}) {
+  override get [ErrorReporter.severity](): LogLevel.Severity {
+    return "Error";
+  }
+}
+
+// An update Postgres rejected, kept in rejected_updates.
+export class UpdateSetAside extends Schema.TaggedError<UpdateSetAside>()("UpdateSetAside", {
+  reason: Schema.String,
+}) {
+  override get message(): string {
+    return `The database rejected an update: ${this.reason}`;
+  }
+
+  override get [ErrorReporter.severity](): LogLevel.Severity {
+    return "Warn";
+  }
+
+  override get [ErrorReporter.attributes]() {
+    return { reason: this.reason };
+  }
+}
+
+export class RecordingDisabled extends Schema.TaggedError<RecordingDisabled>()("RecordingDisabled", {
+  reason: Schema.String,
+}) {
+  override get message(): string {
+    return `Couldn't create the database client, so nothing is recorded: ${this.reason}`;
+  }
+
+  override get [ErrorReporter.severity](): LogLevel.Severity {
+    return "Error";
+  }
+}
+
+const report = (error: UpdateNotStored | UpdateSetAside | RecordingDisabled | DatabaseUnavailable) =>
+  ErrorReporter.report(Cause.fail(error));
+
 // Anything that can't be stored is logged in full instead, so it's never lost
 // without a trace.
 const logInstead = (message: string, entry: Entry) =>
-  Effect.logError(message).pipe(Effect.annotateLogs({ entry: JSON.stringify(entry) }));
+  Effect.logError(message).pipe(
+    Effect.annotateLogs({ entry: JSON.stringify(entry) }),
+    Effect.andThen(report(new UpdateNotStored({ message }))),
+  );
 
 const outageRetry = reconnectSchedule.pipe(
   Schedule.setInputType<ActivityLogError>(),
@@ -47,6 +97,7 @@ const outageRetry = reconnectSchedule.pipe(
   Schedule.tap(({ input, attempt, duration }) =>
     Effect.logWarning("Couldn't record to the database, retrying").pipe(
       Effect.annotateLogs({ reason: input.reason.message, attempt, delayMs: Duration.toMillis(duration) }),
+      Effect.andThen(report(new DatabaseUnavailable({ reason: input.reason.message }))),
     ),
   ),
 );
@@ -93,6 +144,7 @@ export class ActivityRecorder extends Context.Service<
           Effect.andThen(
             Effect.logWarning("The database rejected an update, set it aside in rejected_updates").pipe(
               Effect.annotateLogs({ reason: error.reason.message }),
+              Effect.andThen(report(new UpdateSetAside({ reason: error.reason.message }))),
             ),
           ),
           Effect.catch((rejectError) =>
@@ -182,6 +234,7 @@ export class ActivityRecorder extends Context.Service<
                 Layer.tap(() =>
                   Effect.logError("Couldn't create the database client, so nothing is recorded").pipe(
                     Effect.annotateLogs({ reason: describeError(error) }),
+                    Effect.andThen(report(new RecordingDisabled({ reason: describeError(error) }))),
                   ),
                 ),
               ),

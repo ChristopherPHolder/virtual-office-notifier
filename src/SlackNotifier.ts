@@ -1,5 +1,18 @@
 import { NodeHttpClient } from "@effect/platform-node";
-import { Context, Duration, Effect, Layer, Match, Option, Random, Redacted, Schedule, Schema } from "effect";
+import {
+  Context,
+  Duration,
+  Effect,
+  ErrorReporter,
+  Layer,
+  type LogLevel,
+  Match,
+  Option,
+  Random,
+  Redacted,
+  Schedule,
+  Schema,
+} from "effect";
 import {
   Headers,
   HttpClient,
@@ -49,7 +62,23 @@ export type SlackErrorReason = typeof SlackErrorReason.Type;
 
 export class SlackError extends Schema.TaggedError<SlackError>()("SlackError", {
   reason: SlackErrorReason,
-}) {}
+}) {
+  override get message(): string {
+    return isRetryable(this.reason)
+      ? `Gave up posting to Slack after retries: ${this.reason._tag}`
+      : `Slack rejected the post: ${this.reason._tag}`;
+  }
+
+  // Slack being down usually sorts itself out; a revoked webhook or rejected
+  // payload needs fixing.
+  override get [ErrorReporter.severity](): LogLevel.Severity {
+    return isRetryable(this.reason) ? "Warn" : "Error";
+  }
+
+  override get [ErrorReporter.attributes]() {
+    return { reason: this.reason._tag };
+  }
+}
 
 export const isRetryable = Match.typeTags<SlackErrorReason, boolean>()({
   RateLimited: () => true,
@@ -148,6 +177,7 @@ export class SlackNotifier extends Context.Service<
             TimeoutError: () => Effect.fail(transportError("Timed out after 10 seconds")),
           }),
           Effect.flatMap(checkResponse),
+          Effect.withSpan("SlackNotifier.post"),
         );
 
       const notify = Effect.fn("SlackNotifier.notify")(function* (event: OfficeEvent) {

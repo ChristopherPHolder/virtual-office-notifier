@@ -5,7 +5,7 @@ import { TestClock } from "effect/testing";
 
 import { HeadlineWriter, OpenedReply, UnnamedReply } from "../src/HeadlineWriter.ts";
 import { OfficeEvent } from "../src/OfficeEvent.ts";
-import { opened } from "./fakes.ts";
+import { captureReports, opened } from "./fakes.ts";
 
 type Reply = Effect.Effect<Array<Response.PartEncoded>, AiError.AiError>;
 
@@ -288,6 +288,25 @@ describe("HeadlineWriter", () => {
 
       assert.isTrue(Option.isNone(yield* write(opened)));
       assert.deepStrictEqual(yield* calls, ["model-1", "model-2"]);
+    }));
+
+  it.effect("reports a warning when every model fails, but not when one succeeds", () =>
+    Effect.gen(function* () {
+      const { reports, layer } = captureReports();
+
+      const failing = yield* makeWriter(modelDown, dailyLimitHit);
+      yield* failing.write(opened).pipe(Effect.provide(layer));
+
+      const working = yield* makeWriter(modelDown, good);
+      yield* working.write(opened).pipe(Effect.provide(layer));
+
+      assert.deepStrictEqual(reports, [
+        {
+          name: "NoAiHeadline",
+          message: "No AI model could write a headline, the last failed with DailyLimit",
+          severity: "Warn",
+        },
+      ]);
     }));
 
   it.effect("starts from the first model again on the next headline", () =>

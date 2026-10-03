@@ -1,5 +1,18 @@
 import { PgClient } from "@effect/sql-pg";
-import { Context, Deferred, Duration, Effect, Layer, type Redacted, Schedule, String } from "effect";
+import {
+  Cause,
+  Context,
+  Deferred,
+  Duration,
+  Effect,
+  ErrorReporter,
+  Layer,
+  type LogLevel,
+  type Redacted,
+  Schedule,
+  Schema,
+  String,
+} from "effect";
 import { Migrator, SqlClient, type SqlError } from "effect/sql";
 
 import { migrations } from "./migrations.ts";
@@ -34,11 +47,30 @@ export const describeError = (error: Error): string => {
   return messages.join(": ");
 };
 
+// Reported to Sentry on every retry, connecting or writing. Like the logs, it
+// only carries the messages, never the error objects.
+export class DatabaseUnavailable extends Schema.TaggedError<DatabaseUnavailable>()("DatabaseUnavailable", {
+  reason: Schema.String,
+}) {
+  override get message(): string {
+    return `Couldn't reach the database: ${this.reason}`;
+  }
+
+  override get [ErrorReporter.severity](): LogLevel.Severity {
+    return "Warn";
+  }
+
+  override get [ErrorReporter.attributes]() {
+    return { reason: this.reason };
+  }
+}
+
 const retryLogged = reconnectSchedule.pipe(
   Schedule.setInputType<SqlError.SqlError | Migrator.MigrationError>(),
   Schedule.tap(({ input, attempt, duration }) =>
     Effect.logWarning("Couldn't set up the database, retrying").pipe(
       Effect.annotateLogs({ reason: describeError(input), attempt, delayMs: Duration.toMillis(duration) }),
+      Effect.andThen(ErrorReporter.report(Cause.fail(new DatabaseUnavailable({ reason: describeError(input) })))),
     ),
   ),
 );

@@ -168,10 +168,10 @@ describe("program", () => {
 
       const failure = logs.find((entry) => entry.level === "Error");
       assert.strictEqual(failure?.message, "Slack rejected the post");
-      assert.deepInclude(failure?.annotations, { reason: "WebhookRevoked", event: "Opened", userId: "u1" });
+      assert.deepInclude(failure?.annotations, { reason: "WebhookRevoked", event: "Opened", userId: "<redacted>" });
 
       const success = logs.find((entry) => entry.message === "Announced office event");
-      assert.deepInclude(success?.annotations, { event: "Emptied", outcome: "posted", userId: "u1" });
+      assert.deepInclude(success?.annotations, { event: "Emptied", outcome: "posted", userId: "<redacted>" });
     }));
 
   it.effect("reopens the office after it emptied", () =>

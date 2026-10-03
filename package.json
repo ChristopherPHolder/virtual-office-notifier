@@ -21,6 +21,7 @@
     "@effect/ai-openrouter": "4.0.0",
     "@effect/platform-node": "4.0.0",
     "@effect/sql-pg": "4.0.0",
+    "@sentry/effect": "11.4.0",
     "discord.js": "14.27.0",
     "effect": "4.0.0"
   },

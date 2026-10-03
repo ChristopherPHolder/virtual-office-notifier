@@ -1,4 +1,4 @@
-import { Effect, Layer, Option, Stream } from "effect";
+import { Effect, Layer, Option, Redacted, Stream } from "effect";
 
 import { ActivityRecorder } from "./ActivityRecorder.ts";
 import { DiscordGateway } from "./DiscordGateway.ts";
@@ -12,9 +12,10 @@ const logSlackError = (error: SlackError) =>
     : Effect.logError("Slack rejected the post", error.reason)
   ).pipe(Effect.annotateLogs({ outcome: "failed", reason: error.reason._tag }));
 
+// Redacted, since a Discord user ID identifies a person.
 const eventAnnotations = OfficeEvent.$match({
-  Opened: ({ userId }) => ({ event: "Opened", userId }),
-  Emptied: ({ userId }) => ({ event: "Emptied", userId }),
+  Opened: ({ userId }) => ({ event: "Opened", userId: Redacted.make(userId) }),
+  Emptied: ({ userId }) => ({ event: "Emptied", userId: Redacted.make(userId) }),
   Reminder: () => ({ event: "Reminder" }),
 });
 
@@ -34,11 +35,15 @@ export const program = Effect.gen(function* () {
     }),
   );
 
+  // Each event is its own trace, and a failed post is reported before it's
+  // logged and skipped.
   const announce = Stream.runForEach(events, (event) =>
     slack.notify(event).pipe(
+      Effect.withErrorReporting,
       Effect.andThen(Effect.logInfo("Announced office event").pipe(Effect.annotateLogs({ outcome: "posted" }))),
       Effect.catchTag("SlackError", logSlackError),
       Effect.annotateLogs(eventAnnotations(event)),
+      Effect.withSpan("Program.announce", { attributes: { event: event._tag } }),
     ),
   );
 

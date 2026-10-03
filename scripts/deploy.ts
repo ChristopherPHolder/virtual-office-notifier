@@ -2,7 +2,7 @@ import { NodeRuntime, NodeServices } from "@effect/platform-node";
 import { Config, Effect, FileSystem, Option, Path, Redacted, Schema } from "effect";
 import { ChildProcess, ChildProcessSpawner } from "effect/process";
 
-import { AiConfig, DiscordConfig, ProductionDatabaseConfig, SlackConfig } from "../src/Config.ts";
+import { AiConfig, DiscordConfig, ProductionDatabaseConfig, SentryConfig, SlackConfig } from "../src/Config.ts";
 
 const APP_DIR = "/opt/virtual-office-notifier";
 
@@ -49,6 +49,9 @@ const writeEnvFile = Effect.gen(function* () {
   const slack = yield* SlackConfig;
   const ai = yield* AiConfig;
   const database = yield* ProductionDatabaseConfig;
+  const sentry = yield* SentryConfig;
+  // Set by GitHub Actions, so everything sent to Sentry is tagged with the commit.
+  const commit = yield* Config.option(Config.NonEmptyString("GITHUB_SHA"));
 
   const dir = yield* fs.makeTempDirectoryScoped({ prefix: `${SERVICE}-` });
   const file = path.join(dir, ENV_FILE);
@@ -63,6 +66,9 @@ const writeEnvFile = Effect.gen(function* () {
       ...envLine("CLOUDFLARE_ACCOUNT_ID", ai.cloudflare.accountId),
       ...envLine("CLOUDFLARE_API_TOKEN", ai.cloudflare.apiToken),
       `DATABASE_URL=${Redacted.value(database.url)}`,
+      ...envLine("SENTRY_DSN", sentry.dsn),
+      "SENTRY_ENVIRONMENT=production",
+      ...Option.toArray(Option.map(commit, (sha) => `SENTRY_RELEASE=${sha}`)),
       "",
     ].join("\n"),
     { mode: 0o600 },

@@ -3,12 +3,14 @@ import { OpenRouterClient, OpenRouterLanguageModel } from "@effect/ai-openrouter
 import { NodeHttpClient } from "@effect/platform-node";
 import {
   Array,
-  type Cause,
+  Cause,
   Context,
   Effect,
+  ErrorReporter,
   ExecutionPlan,
   identity,
   Layer,
+  type LogLevel,
   Match,
   Option,
   Random,
@@ -65,6 +67,24 @@ export const UnnamedReply = ReplyWith(Line(10, 160, /^[^{}<>]+$/));
 export class UnusableHeadline extends Schema.TaggedError<UnusableHeadline>()("UnusableHeadline", {
   text: Schema.String,
 }) {}
+
+// Reported once every model has failed, so a run of fixed headlines shows up
+// in Sentry. `reason` is why the last model failed.
+export class NoAiHeadline extends Schema.TaggedError<NoAiHeadline>()("NoAiHeadline", {
+  reason: Schema.String,
+}) {
+  override get message(): string {
+    return `No AI model could write a headline, the last failed with ${this.reason}`;
+  }
+
+  override get [ErrorReporter.severity](): LogLevel.Severity {
+    return "Warn";
+  }
+
+  override get [ErrorReporter.attributes]() {
+    return { reason: this.reason };
+  }
+}
 
 interface Brief {
   readonly task: string;
@@ -225,7 +245,11 @@ export class HeadlineWriter extends Context.Service<
 
             return yield* writeWithModel(briefFor(event)).pipe(Effect.withExecutionPlan(plan));
           },
-          Effect.tapError(() => Effect.logWarning("No AI model could write a headline")),
+          Effect.tapError((error) =>
+            Effect.logWarning("No AI model could write a headline").pipe(
+              Effect.andThen(ErrorReporter.report(Cause.fail(new NoAiHeadline({ reason: failureReason(error) })))),
+            ),
+          ),
           Effect.option,
           (effect, event) => Effect.annotateLogs(effect, { headline: event._tag }),
         ),

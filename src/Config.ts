@@ -42,6 +42,13 @@ export const DEFAULT_CLOUDFLARE_MODELS: Array.NonEmptyReadonlyArray<string> = [
   "@cf/google/gemma-4-26b-a4b-it",
 ];
 
+// With no DSN, nothing is sent to Sentry and logs only go to the console.
+export const SentryConfig = Config.all({
+  dsn: optionalSecret("SENTRY_DSN"),
+  environment: Config.NonEmptyString("SENTRY_ENVIRONMENT").pipe(Config.withDefault("development")),
+  release: Config.option(Config.NonEmptyString("SENTRY_RELEASE")),
+});
+
 export const AiConfig = Config.all({
   openRouter: Config.all({
     apiKey: optionalSecret("OPENROUTER_API_KEY"),
