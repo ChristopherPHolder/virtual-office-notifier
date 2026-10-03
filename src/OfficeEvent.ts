@@ -51,12 +51,40 @@ export const isOfficeLeave = (officeChannelId: string, change: VoiceStateChange)
   change.oldChannelId === officeChannelId &&
   change.newChannelId !== officeChannelId;
 
+// Everything else on one side of a voice state, recorded as Discord sent it.
+// Null when Discord didn't say, as on the old side of a join.
+export interface VoiceDetails {
+  readonly selfMute: boolean | null;
+  readonly selfDeaf: boolean | null;
+  readonly serverMute: boolean | null;
+  readonly serverDeaf: boolean | null;
+  readonly selfVideo: boolean | null;
+  readonly streaming: boolean | null;
+  readonly suppress: boolean | null;
+  readonly requestToSpeakAt: DateTime.Utc | null;
+  readonly sessionId: string | null;
+}
+
+export const NO_VOICE_DETAILS: VoiceDetails = {
+  selfMute: null,
+  selfDeaf: null,
+  serverMute: null,
+  serverDeaf: null,
+  selfVideo: null,
+  streaming: null,
+  suppress: null,
+  requestToSpeakAt: null,
+  sessionId: null,
+};
+
 // A plain snapshot of a discord.js voiceStateUpdate event.
 export interface VoiceStateUpdate extends VoiceStateChange {
   readonly userId: string;
   readonly displayName: string;
   readonly avatarUrl: string | null;
   readonly guildId: string;
+  readonly oldDetails: VoiceDetails;
+  readonly newDetails: VoiceDetails;
 }
 
 // A voice state update stamped with when it arrived.

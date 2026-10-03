@@ -1,8 +1,7 @@
 import { PgClient } from "@effect/sql-pg";
-import { Context, Deferred, Duration, Effect, Layer, Option, type Redacted, Schedule, String } from "effect";
+import { Context, Deferred, Duration, Effect, Layer, type Redacted, Schedule, String } from "effect";
 import { Migrator, SqlClient, type SqlError } from "effect/sql";
 
-import { DatabaseConfig } from "./Config.ts";
 import { migrations } from "./migrations.ts";
 import { SUPABASE_ROOT_CA } from "./SupabaseCa.ts";
 
@@ -43,6 +42,12 @@ const retryLogged = reconnectSchedule.pipe(
     ),
   ),
 );
+
+// camelCase in TypeScript, snake_case in Postgres.
+export const columnNaming = {
+  transformQueryNames: String.camelToSnake,
+  transformResultNames: String.snakeToCamel,
+};
 
 const runMigrations = Migrator.make({});
 
@@ -94,33 +99,8 @@ export class Database extends Context.Service<
           ssl: { ca: SUPABASE_ROOT_CA },
           maxConnections: 2,
           applicationName: "virtual-office-notifier",
-          transformQueryNames: String.camelToSnake,
-          transformResultNames: String.snakeToCamel,
+          ...columnNaming,
         }),
       ),
     );
 }
-
-// What the bot runs with. It never fails, so the database can't stop the
-// announcements: without DATABASE_URL nothing connects. Nothing reads from the
-// database yet.
-export const DatabaseLive = Layer.unwrap(
-  Effect.gen(function* () {
-    const { url } = yield* DatabaseConfig;
-
-    return Option.match(url, {
-      onNone: () => Layer.effectDiscard(Effect.logInfo("DATABASE_URL isn't set, so nothing is recorded")),
-      onSome: (url) =>
-        Layer.effectDiscard(Effect.void).pipe(
-          Layer.provide(Database.layer(url)),
-          Layer.catch((error) =>
-            Layer.effectDiscard(
-              Effect.logError("Couldn't create the database client, so nothing is recorded").pipe(
-                Effect.annotateLogs({ reason: describeError(error) }),
-              ),
-            ),
-          ),
-        ),
-    });
-  }),
-);

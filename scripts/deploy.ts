@@ -2,7 +2,7 @@ import { NodeRuntime, NodeServices } from "@effect/platform-node";
 import { Config, Effect, FileSystem, Option, Path, Redacted, Schema } from "effect";
 import { ChildProcess, ChildProcessSpawner } from "effect/process";
 
-import { AiConfig, DatabaseConfig, DiscordConfig, SlackConfig } from "../src/Config.ts";
+import { AiConfig, DiscordConfig, ProductionDatabaseConfig, SlackConfig } from "../src/Config.ts";
 
 const APP_DIR = "/opt/virtual-office-notifier";
 
@@ -48,7 +48,7 @@ const writeEnvFile = Effect.gen(function* () {
   const discord = yield* DiscordConfig;
   const slack = yield* SlackConfig;
   const ai = yield* AiConfig;
-  const database = yield* DatabaseConfig;
+  const database = yield* ProductionDatabaseConfig;
 
   const dir = yield* fs.makeTempDirectoryScoped({ prefix: `${SERVICE}-` });
   const file = path.join(dir, ENV_FILE);
@@ -62,7 +62,7 @@ const writeEnvFile = Effect.gen(function* () {
       ...envLine("OPENROUTER_API_KEY", ai.openRouter.apiKey),
       ...envLine("CLOUDFLARE_ACCOUNT_ID", ai.cloudflare.accountId),
       ...envLine("CLOUDFLARE_API_TOKEN", ai.cloudflare.apiToken),
-      ...envLine("DATABASE_URL", database.url),
+      `DATABASE_URL=${Redacted.value(database.url)}`,
       "",
     ].join("\n"),
     { mode: 0o600 },

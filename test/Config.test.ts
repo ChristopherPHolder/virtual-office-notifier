@@ -7,6 +7,7 @@ import {
   DEFAULT_CLOUDFLARE_MODELS,
   DEFAULT_OPENROUTER_MODELS,
   DiscordConfig,
+  ProductionDatabaseConfig,
   SlackConfig,
 } from "../src/Config.ts";
 import { withEnv } from "./fakes.ts";
@@ -97,6 +98,15 @@ describe("Config", () => {
 
       assert.deepStrictEqual(Option.map(url, Redacted.value), Option.some(databaseUrl));
       assert.notInclude(String(url), "secret");
+    }));
+
+  it.effect("requires the database URL for production, naming it when it's missing", () =>
+    Effect.gen(function* () {
+      for (const env of [{}, { DATABASE_URL: "" }]) {
+        const exit = yield* ProductionDatabaseConfig.pipe(withEnv(env), Effect.exit);
+
+        assert.include(failureMessage(exit), "DATABASE_URL");
+      }
     }));
 
   it.effect("rejects a blank entry in the model list", () =>

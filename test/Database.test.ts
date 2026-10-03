@@ -1,11 +1,10 @@
 import { PgliteClient } from "@effect/sql-pglite";
 import { assert, describe, it } from "@effect/vitest";
-import { Duration, Effect, Fiber, Layer, Queue, Ref } from "effect";
+import { Duration, Effect, Fiber, Queue, Ref } from "effect";
 import { Migrator, SqlClient, SqlError } from "effect/sql";
 import { TestClock } from "effect/testing";
 
-import { Database, DatabaseLive, describeError, reconnectDelay } from "../src/Database.ts";
-import { withEnv } from "./fakes.ts";
+import { Database, describeError, reconnectDelay } from "../src/Database.ts";
 
 const createExample = Migrator.fromRecord({
   "0001_create_example": Effect.gen(function* () {
@@ -111,14 +110,4 @@ describe("Database", () => {
 
       assert.deepStrictEqual(yield* migrationNames, ["create_example"]);
     }).pipe(Effect.provide(PgliteClient.layer())));
-});
-
-describe("DatabaseLive", () => {
-  it.effect.each([
-    { case: "without DATABASE_URL", env: {} },
-    { case: "with a blank DATABASE_URL", env: { DATABASE_URL: " " } },
-    { case: "with a DATABASE_URL it can't parse", env: { DATABASE_URL: "not a url" } },
-    { case: "while the database is unreachable", env: { DATABASE_URL: "postgres://user:secret@127.0.0.1:1/postgres" } },
-  ])("never fails startup $case", ({ env }) =>
-    Layer.build(DatabaseLive).pipe(Effect.scoped, withEnv(env), Effect.asVoid));
 });

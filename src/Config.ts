@@ -59,3 +59,9 @@ export const AiConfig = Config.all({
 export const DatabaseConfig = Config.all({
   url: optionalSecret("DATABASE_URL"),
 });
+
+// Production always records, so a deploy without it fails instead of quietly
+// recording nothing.
+export const ProductionDatabaseConfig = Config.all({
+  url: secret("DATABASE_URL"),
+});
