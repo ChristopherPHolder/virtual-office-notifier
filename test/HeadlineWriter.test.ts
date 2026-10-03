@@ -3,7 +3,7 @@ import { Array, Effect, Fiber, Layer, Option, Random, Ref, Schema, Stream } from
 import { AiError, LanguageModel, Model, type Response } from "effect/ai";
 import { TestClock } from "effect/testing";
 
-import { HeadlineWriter, OpenedReply, UnnamedReply } from "../src/HeadlineWriter.ts";
+import { BanterReply, HeadlineWriter, OpenedReply, UnnamedReply } from "../src/HeadlineWriter.ts";
 import { OfficeEvent } from "../src/OfficeEvent.ts";
 import { captureReports, opened } from "./fakes.ts";
 
@@ -121,7 +121,36 @@ describe("UnnamedReply", () => {
   });
 });
 
+describe("BanterReply", () => {
+  const decode = Schema.decodeOption(BanterReply);
+
+  it("accepts a message that names people", () => {
+    assert.deepStrictEqual(
+      decode("🎙️ Linus has toggled mute 16 times since 10:10. That switch is getting a workout.\n🎚️ Join the rhythm"),
+      Option.some([
+        "🎙️ Linus has toggled mute 16 times since 10:10. That switch is getting a workout.",
+        "🎚️ Join the rhythm",
+      ] as const),
+    );
+  });
+
+  it("rejects Slack link syntax and messages over 300 characters", () => {
+    assert.isTrue(Option.isNone(decode("🎉 Big day in the office <!channel>\n🪑 Grab a seat")));
+    assert.isTrue(Option.isNone(decode(`🎉 ${"busy ".repeat(70)}office\n🪑 Grab a seat`)));
+  });
+});
+
 const emptied = OfficeEvent.Emptied({ ...opened, recap: Option.none() });
+
+const banter = OfficeEvent.Banter({
+  guildId: "g1",
+  channelId: "c1",
+  at: opened.at,
+  period: "Today",
+  activityOldestFirst: [{ at: opened.at, who: "Ada", event: "Joined" }],
+  olderEntriesLeftOut: 0,
+  present: ["Ada"],
+});
 
 const reminder = OfficeEvent.Reminder({ guildId: "g1", channelId: "c1", at: opened.at });
 
@@ -317,5 +346,47 @@ describe("HeadlineWriter", () => {
       yield* write(opened);
 
       assert.deepStrictEqual(yield* calls, ["model-1", "model-2", "model-1", "model-2"]);
+    }));
+
+  it.effect("writes banter with its own models, which see the log and the names in it", () =>
+    Effect.gen(function* () {
+      const calls = yield* Ref.make<ReadonlyArray<string>>([]);
+      const prompt = yield* Ref.make("");
+
+      const banterModel = Model.make(
+        "test",
+        "banter-model",
+        Layer.effect(
+          LanguageModel.LanguageModel,
+          LanguageModel.make({
+            generateText: (options) =>
+              Ref.update(calls, (sent) => [...sent, "banter-model"]).pipe(
+                Effect.andThen(Ref.set(prompt, JSON.stringify(options.prompt))),
+                Effect.andThen(says("🐦 Ada was first in again today.\n⏰ Beat Ada tomorrow")),
+              ),
+            streamText: () => Stream.empty,
+          }),
+        ),
+      );
+
+      const writer = yield* Effect.service(HeadlineWriter).pipe(
+        Effect.provide(HeadlineWriter.layerProviders([[fakeModel("headline-model", good, calls)]], [[banterModel]])),
+      );
+
+      assert.deepStrictEqual(
+        yield* writer.write(banter).pipe(inOrder),
+        Option.some({ template: "🐦 Ada was first in again today.", button: "⏰ Beat Ada tomorrow", model: "banter-model" }),
+      );
+      yield* writer.write(opened).pipe(inOrder);
+
+      assert.deepStrictEqual(yield* Ref.get(calls), ["banter-model", "headline-model"]);
+      assert.include(yield* Ref.get(prompt), "Ada Joined");
+    }));
+
+  it.effect("uses the headline models for banter when it has none of its own", () =>
+    Effect.gen(function* () {
+      const { write } = yield* makeWriter(says("🐦 Ada was first in again today.\n⏰ Beat Ada tomorrow"));
+
+      assert.isTrue(Option.isSome(yield* write(banter)));
     }));
 });

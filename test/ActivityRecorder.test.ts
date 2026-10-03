@@ -8,6 +8,7 @@ import { ActivityLog, ActivityLogError, BadRow, Outage } from "../src/ActivityLo
 import { ActivityRecorder, BUFFER_SIZE } from "../src/ActivityRecorder.ts";
 import { columnNaming, Database } from "../src/Database.ts";
 import { NO_VOICE_DETAILS } from "../src/OfficeEvent.ts";
+import { StorageLayer } from "../src/Storage.ts";
 import type { VoiceObservation } from "../src/VoiceObservation.ts";
 import { captureReports, withEnv } from "./fakes.ts";
 
@@ -271,7 +272,7 @@ describe("ActivityRecorder", () => {
     }));
 });
 
-describe("ActivityRecorder.layer", () => {
+describe("StorageLayer", () => {
   it.effect.each([
     { case: "without DATABASE_URL", env: {} },
     { case: "with a blank DATABASE_URL", env: { DATABASE_URL: " " } },
@@ -279,7 +280,7 @@ describe("ActivityRecorder.layer", () => {
     { case: "while the database is unreachable", env: { DATABASE_URL: "postgres://user:secret@127.0.0.1:1/postgres" } },
   ])("never fails startup or shutdown $case", ({ env }) =>
     Effect.gen(function* () {
-      const building = yield* Layer.build(ActivityRecorder.layer).pipe(Effect.scoped, withEnv(env), Effect.forkChild);
+      const building = yield* Layer.build(StorageLayer).pipe(Effect.scoped, withEnv(env), Effect.forkChild);
 
       // Shutting down waits up to 10 seconds for a database that never came up.
       // The real connection attempt needs real time to fail, so the test clock

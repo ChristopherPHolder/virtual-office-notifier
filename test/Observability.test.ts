@@ -7,6 +7,7 @@ import { ActivityRecorder } from "../src/ActivityRecorder.ts";
 import { DiscordGateway } from "../src/DiscordGateway.ts";
 import { layerSentry } from "../src/Observability.ts";
 import { NO_VOICE_DETAILS, type VoiceStateUpdate } from "../src/OfficeEvent.ts";
+import { OfficeHistory } from "../src/OfficeHistory.ts";
 import { program } from "../src/Program.ts";
 import { firstVariant, makeFakeSlack, ok, type Reply, respond, WEBHOOK_URL, withEnv } from "./fakes.ts";
 
@@ -65,7 +66,7 @@ const runWithSentry = Effect.fnUntraced(function* (replies: ReadonlyArray<Reply>
     yield* Queue.end(queue);
 
     const fiber = yield* program.pipe(
-      Effect.provide(Layer.mergeAll(DiscordGateway.layerTest(queue), slack.layer, ActivityRecorder.layerDisabled)),
+      Effect.provide(Layer.mergeAll(DiscordGateway.layerTest(queue), slack.layer, ActivityRecorder.layerDisabled, OfficeHistory.layerDisabled)),
       Effect.forkChild,
     );
 

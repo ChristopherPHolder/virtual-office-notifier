@@ -3,6 +3,7 @@ import { type Cause, Effect, Fiber, Layer, Logger, type LogLevel, Queue, Referen
 import { TestClock } from "effect/testing";
 
 import { DiscordGateway } from "../src/DiscordGateway.ts";
+import { OfficeHistory } from "../src/OfficeHistory.ts";
 import { MainLayer, program } from "../src/Program.ts";
 import { NO_VOICE_DETAILS, type VoiceStateUpdate } from "../src/OfficeEvent.ts";
 import { firstVariant, hang, makeFakeRecorder, makeFakeSlack, ok, type Reply, respond, WEBHOOK_URL, withEnv } from "./fakes.ts";
@@ -72,6 +73,7 @@ const runProgram = Effect.fnUntraced(function* (
         DiscordGateway.layerTest(queue, new Set(present.map((update) => update.userId)), GUILD, present),
         slack.layer,
         recorder.layer,
+        OfficeHistory.layerDisabled,
         Logger.layer([captureLogs]),
       ),
     ),
@@ -231,7 +233,7 @@ describe("recording", () => {
       const recorder = yield* makeFakeRecorder();
 
       const fiber = yield* program.pipe(
-        Effect.provide(Layer.mergeAll(DiscordGateway.layerTest(queue), slack.layer, recorder.layer)),
+        Effect.provide(Layer.mergeAll(DiscordGateway.layerTest(queue), slack.layer, recorder.layer, OfficeHistory.layerDisabled)),
         withEnv(env),
         firstVariant,
         Effect.forkChild,
@@ -256,11 +258,15 @@ describe("daily reminder", () => {
       const recorder = yield* makeFakeRecorder();
 
       const fiber = yield* program.pipe(
-        Effect.provide(Layer.mergeAll(DiscordGateway.layerTest(queue), slack.layer, recorder.layer)),
+        Effect.provide(Layer.mergeAll(DiscordGateway.layerTest(queue), slack.layer, recorder.layer, OfficeHistory.layerDisabled)),
         withEnv(env),
         firstVariant,
         Effect.forkChild,
       );
+
+      // The scheduled streams start their timers in forked fibers, so they get
+      // a chance to start before the clock moves.
+      yield* Effect.repeat(Effect.yieldNow, { times: 10 });
 
       // The test clock starts on a Thursday, so the first reminder is at 09:15Z.
       yield* TestClock.adjust("10 hours");
