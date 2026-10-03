@@ -1,4 +1,4 @@
-import { ConfigProvider, DateTime, Effect, Layer, Random, Ref } from "effect";
+import { ConfigProvider, DateTime, Effect, ErrorReporter, Layer, Random, Ref } from "effect";
 import {
   HttpBody,
   HttpClient,
@@ -99,3 +99,22 @@ export const makeFakeRecorder = Effect.fnUntraced(function* () {
 
 export const withEnv = (env: Record<string, string>) =>
   Effect.provideService(ConfigProvider.ConfigProvider, ConfigProvider.fromEnv({ env }));
+
+export interface Report {
+  readonly name: string;
+  readonly message: string;
+  readonly severity: string;
+}
+
+// Collects what would be reported to Sentry.
+export const captureReports = () => {
+  const reports: Array<Report> = [];
+
+  const layer = ErrorReporter.layer([
+    ErrorReporter.make(({ error, severity }) => {
+      reports.push({ name: error.name, message: error.message, severity });
+    }),
+  ]);
+
+  return { reports, layer };
+};

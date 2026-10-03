@@ -9,7 +9,7 @@ import { ActivityRecorder, BUFFER_SIZE } from "../src/ActivityRecorder.ts";
 import { columnNaming, Database } from "../src/Database.ts";
 import { NO_VOICE_DETAILS } from "../src/OfficeEvent.ts";
 import type { VoiceObservation } from "../src/VoiceObservation.ts";
-import { withEnv } from "./fakes.ts";
+import { captureReports, withEnv } from "./fakes.ts";
 
 const observation = (userId: string): VoiceObservation => ({
   source: "update",
@@ -137,8 +137,10 @@ describe("ActivityRecorder", () => {
       assert.deepStrictEqual(yield* fake.allCalls, ["start", "record u1", "stop"]);
     }));
 
-  it.effect("retries an outage on the reconnect schedule without losing its place", () =>
-    Effect.gen(function* () {
+  it.effect("retries an outage on the reconnect schedule without losing its place, reporting each retry", () => {
+    const { reports, layer } = captureReports();
+
+    return Effect.gen(function* () {
       const fake = yield* makeFakeLog({ "record u1": outages(2) });
       const { recorder, stop } = yield* startRecorder(fake.log);
 
@@ -156,10 +158,21 @@ describe("ActivityRecorder", () => {
       assert.strictEqual(yield* fake.takeCall, "record u2");
 
       yield* stop;
-    }));
 
-  it.effect("sets aside a row the database rejects and carries on", () =>
-    Effect.gen(function* () {
+      const retry = {
+        name: "DatabaseUnavailable",
+        message: "Couldn't reach the database: connection closed",
+        severity: "Warn",
+      };
+
+      assert.deepStrictEqual(reports, [retry, retry]);
+    }).pipe(Effect.provide(layer));
+  });
+
+  it.effect("sets aside a row the database rejects and carries on, reporting a warning", () => {
+    const { reports, layer } = captureReports();
+
+    return Effect.gen(function* () {
       const fake = yield* makeFakeLog({ "record u1": [badRow] });
       const { recorder, stop } = yield* startRecorder(fake.log);
 
@@ -168,11 +181,20 @@ describe("ActivityRecorder", () => {
       yield* stop;
 
       assert.deepStrictEqual(yield* fake.allCalls, ["start", "record u1", "reject u1", "record u2", "stop"]);
-    }));
+      assert.deepStrictEqual(reports, [
+        {
+          name: "UpdateSetAside",
+          message: "The database rejected an update: violates check constraint",
+          severity: "Warn",
+        },
+      ]);
+    }).pipe(Effect.provide(layer));
+  });
 
-  it.effect("logs an update in full when it can't be recorded or set aside", () =>
+  it.effect("logs an update in full when it can't be recorded or set aside, reporting an error without it", () =>
     Effect.gen(function* () {
       const logs = captureLogs();
+      const { reports, layer } = captureReports();
       const fake = yield* makeFakeLog({ "record u1": [badRow], "reject u1": [outage] });
 
       yield* Effect.gen(function* () {
@@ -180,12 +202,20 @@ describe("ActivityRecorder", () => {
 
         yield* recorder.record(observation("u1"));
         yield* stop;
-      }).pipe(Effect.provide(logs.layer));
+      }).pipe(Effect.provide(Layer.merge(logs.layer, layer)));
 
       const lost = messagesStartingWith(logs.messages, "Couldn't record or set aside");
 
       assert.strictEqual(lost.length, 1);
       assert.include(lost[0]?.entry, `"userId":"u1"`);
+      assert.deepStrictEqual(reports, [
+        {
+          name: "UpdateNotStored",
+          message: "Couldn't record or set aside an update, logging it instead",
+          severity: "Error",
+        },
+      ]);
+      assert.notInclude(JSON.stringify(reports), "u1");
     }));
 
   it.effect("refuses observations once the buffer is full, logging each one", () =>

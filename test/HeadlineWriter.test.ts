@@ -1,11 +1,11 @@
 import { assert, describe, it } from "@effect/vitest";
-import { Array, Effect, ErrorReporter, Fiber, Layer, Option, Random, Ref, Schema, Stream } from "effect";
+import { Array, Effect, Fiber, Layer, Option, Random, Ref, Schema, Stream } from "effect";
 import { AiError, LanguageModel, Model, type Response } from "effect/ai";
 import { TestClock } from "effect/testing";
 
 import { HeadlineWriter, OpenedReply, UnnamedReply } from "../src/HeadlineWriter.ts";
 import { OfficeEvent } from "../src/OfficeEvent.ts";
-import { opened } from "./fakes.ts";
+import { captureReports, opened } from "./fakes.ts";
 
 type Reply = Effect.Effect<Array<Response.PartEncoded>, AiError.AiError>;
 
@@ -292,22 +292,20 @@ describe("HeadlineWriter", () => {
 
   it.effect("reports a warning when every model fails, but not when one succeeds", () =>
     Effect.gen(function* () {
-      const reports: Array<{ readonly message: string; readonly severity: string }> = [];
-
-      const reporter = ErrorReporter.layer([
-        ErrorReporter.make(({ error, severity }) => {
-          reports.push({ message: error.message, severity });
-        }),
-      ]);
+      const { reports, layer } = captureReports();
 
       const failing = yield* makeWriter(modelDown, dailyLimitHit);
-      yield* failing.write(opened).pipe(Effect.provide(reporter));
+      yield* failing.write(opened).pipe(Effect.provide(layer));
 
       const working = yield* makeWriter(modelDown, good);
-      yield* working.write(opened).pipe(Effect.provide(reporter));
+      yield* working.write(opened).pipe(Effect.provide(layer));
 
       assert.deepStrictEqual(reports, [
-        { message: "No AI model could write a headline, the last failed with DailyLimit", severity: "Warn" },
+        {
+          name: "NoAiHeadline",
+          message: "No AI model could write a headline, the last failed with DailyLimit",
+          severity: "Warn",
+        },
       ]);
     }));
 

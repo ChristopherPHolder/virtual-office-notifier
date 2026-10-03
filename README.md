@@ -337,7 +337,7 @@ gcloud compute ssh virtual-office-notifier --zone=us-central1-a -- journalctl -u
 
 With `SENTRY_DSN` set, the app sends errors, traces and logs to [Sentry](https://sentry.io) through [`@sentry/effect`](https://docs.sentry.io/platforms/javascript/guides/effect/). Everything still goes to the journal as well.
 
-- **Issues.** A crash, including at startup, is an error. A Slack post that only failed after retries is a warning; a revoked webhook or rejected payload is an error. Discord client errors are errors, and every AI model failing to write a headline is a warning.
+- **Issues.** A crash, including at startup, is an error. A Slack post that only failed after retries is a warning; a revoked webhook or rejected payload is an error. Discord client errors are errors, and every AI model failing to write a headline is a warning. For the [database](#database), every retry while it's unreachable and every update it rejects is a warning, and an update that could only be logged, or a database client that couldn't be created, is an error. These never include the update itself.
 - **Traces.** Each announcement is its own trace: the Slack post with each attempt, and the AI model calls. HTTP client spans are turned off, because they'd record the webhook URL, which is a secret.
 - **Logs.** Every log line, linked to the trace it was logged in. Only the message is sent, not the annotations.
 

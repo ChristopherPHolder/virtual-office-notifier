@@ -1,10 +1,11 @@
 import { PgliteClient } from "@effect/sql-pglite";
 import { assert, describe, it } from "@effect/vitest";
-import { Duration, Effect, Fiber, Queue, Ref } from "effect";
+import { Duration, Effect, Fiber, Layer, Queue, Ref } from "effect";
 import { Migrator, SqlClient, SqlError } from "effect/sql";
 import { TestClock } from "effect/testing";
 
 import { Database, describeError, reconnectDelay } from "../src/Database.ts";
+import { captureReports } from "./fakes.ts";
 
 const createExample = Migrator.fromRecord({
   "0001_create_example": Effect.gen(function* () {
@@ -71,8 +72,10 @@ describe("Database", () => {
       assert.deepStrictEqual(yield* migrationNames, ["create_example"]);
     }).pipe(Effect.provide(PgliteClient.layer())));
 
-  it.effect("keeps retrying in the background until it can set up the database", () =>
-    Effect.gen(function* () {
+  it.effect("keeps retrying in the background until it can set up the database, reporting each retry", () => {
+    const { reports, layer } = captureReports();
+
+    return Effect.gen(function* () {
       const attempts = yield* Queue.unbounded<number>();
       const count = yield* Ref.make(0);
 
@@ -109,5 +112,8 @@ describe("Database", () => {
       yield* Fiber.join(ready);
 
       assert.deepStrictEqual(yield* migrationNames, ["create_example"]);
-    }).pipe(Effect.provide(PgliteClient.layer())));
+      assert.strictEqual(reports.length, 6);
+      assert.isTrue(reports.every((report) => report.name === "DatabaseUnavailable" && report.severity === "Warn"));
+    }).pipe(Effect.provide(Layer.merge(PgliteClient.layer(), layer)));
+  });
 });
