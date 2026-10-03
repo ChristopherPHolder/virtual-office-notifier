@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/ChristopherPHolder/virtual-office-notifier/actions/workflows/ci.yml/badge.svg)](https://github.com/ChristopherPHolder/virtual-office-notifier/actions/workflows/ci.yml)
 
-Posts to Slack when someone opens our Discord "virtual office" voice channel, and again when it empties out, so people know when they can jump in. On weekdays it also posts a reminder to come hang out.
+Posts to Slack when someone opens our Discord "virtual office" voice channel, and again when it empties out, so people know when they can jump in. On weekdays it also posts a reminder to come hang out. It also records what happens in the office channel to a Postgres database.
 
 - [Features](#features)
 - [What it posts](#what-it-posts)
@@ -25,6 +25,7 @@ Posts to Slack when someone opens our Discord "virtual office" voice channel, an
 - **AI-written headlines** from free models on OpenRouter or Cloudflare Workers AI, falling back to fixed phrasings.
 - **Restart-safe.** It counts whoever is already in the channel at startup, so a restart mid-session doesn't announce the office opening again.
 - **Keeps going when Slack doesn't.** Failed posts are retried with backoff and logged, and never crash the process.
+- **Records voice activity** in the office channel to a [database](#database): joins, leaves, mute, deafen, camera and streaming, exactly as Discord reports them. The database can never stop the announcements.
 
 ## What it posts
 
@@ -58,7 +59,7 @@ When an AI model writes the headline and button label, the card adds a `✨ Head
 | Emptied | The last person leaves. Moving to another voice channel counts as leaving. The recap is left out for a session that was already under way when the bot started, since it missed the beginning. |
 | Reminder | Weekdays at 11:15 UTC+2. It's a fixed offset, so it doesn't shift with daylight saving. Skipped if the office channel wasn't found at startup, since there's nothing to link to. |
 
-It only watches the one office channel and ignores bots. Mute, deafen and video changes are ignored.
+It only watches the one office channel and ignores bots. Mute, deafen and video changes aren't announced, only [recorded](#database).
 
 The fixed opened and emptied headlines are picked at random from a few phrasings. The reminder rotates through its phrasings by date, so each one comes up once before any repeats.
 
@@ -77,20 +78,31 @@ flowchart LR
   Notifier <-->|headline + label| Writer[HeadlineWriter]
   Writer <-.->|optional| AI[OpenRouter / Workers AI]
   Notifier -->|Block Kit card| Slack[Slack webhook]
+  Gateway -->|voice observations| Recorder[ActivityRecorder]
+  Recorder -->|in order, in the background| Log[ActivityLog]
+  Log --> Postgres[(Supabase Postgres)]
 ```
 
 Events are handled one at a time, so one that arrives while a Slack post is being retried waits its turn and messages stay in order. Each post times out after 10 seconds and is retried up to 4 times with jittered exponential backoff from 1 second, or after Slack's `Retry-After` when rate-limited. A revoked webhook (403, 404 or 410) or a rejected payload isn't retried. Either way the failure is logged and the next event is handled as normal.
 
+Recording runs alongside, in its own fiber, so a slow Slack post never holds it up. See [Database](#database) for how it handles the database being down.
+
 | Module | Responsibility |
 |---|---|
 | [`src/main.ts`](src/main.ts) | Entry point. Provides the layers and runs the program. |
-| [`src/Program.ts`](src/Program.ts) | Merges office events with reminders and posts each one to Slack. |
-| [`src/DiscordGateway.ts`](src/DiscordGateway.ts) | Logs in to Discord, finds the office channel and turns voice-state updates into office events. |
+| [`src/Program.ts`](src/Program.ts) | Merges office events with reminders and posts each one to Slack, and records voice activity alongside. |
+| [`src/DiscordGateway.ts`](src/DiscordGateway.ts) | Logs in to Discord, finds the office channel and turns voice-state updates into office events and observations to record. |
 | [`src/OfficeEvent.ts`](src/OfficeEvent.ts) | The event types and the occupancy tracking that decides when the office opens or empties. |
 | [`src/Reminder.ts`](src/Reminder.ts) | The weekday reminder schedule. |
 | [`src/HeadlineWriter.ts`](src/HeadlineWriter.ts) | Asks the AI providers for a headline and button label, and checks the reply. |
 | [`src/SlackMessage.ts`](src/SlackMessage.ts) | Builds the Block Kit message, including the fixed phrasings. |
 | [`src/SlackNotifier.ts`](src/SlackNotifier.ts) | Posts to the webhook, with retries and error classification. |
+| [`src/VoiceObservation.ts`](src/VoiceObservation.ts) | Decides which voice-state updates are worth recording. |
+| [`src/ActivityRecorder.ts`](src/ActivityRecorder.ts) | Buffers observations and writes them in order, retrying outages and setting aside rows the database rejects. |
+| [`src/ActivityLog.ts`](src/ActivityLog.ts) | The repository: the SQL that writes sessions, members and snapshots, and tells outages from bad rows. |
+| [`src/Database.ts`](src/Database.ts) | Connects to Postgres and runs the migrations in the background, retrying until it works. |
+| [`src/migrations.ts`](src/migrations.ts) | The tables and the `voice_activity` view, bundled into the app. |
+| [`src/SupabaseCa.ts`](src/SupabaseCa.ts) | Supabase's root certificate, which Node doesn't trust by default. |
 | [`src/Config.ts`](src/Config.ts) | Environment variables and the default model lists. |
 
 ## Getting started
@@ -124,8 +136,9 @@ All configuration comes from environment variables. Copy `.env.example` to `.env
 | `CLOUDFLARE_ACCOUNT_ID` | No | Cloudflare account ID, for AI headlines from Workers AI. Needs `CLOUDFLARE_API_TOKEN` too. |
 | `CLOUDFLARE_API_TOKEN` | No | Workers AI API token. Secret. |
 | `CLOUDFLARE_MODELS` | No | Comma-separated Workers AI models to try, preferred first. Defaults to `DEFAULT_CLOUDFLARE_MODELS` in [`src/Config.ts`](src/Config.ts), all within the free daily allocation. |
+| `DATABASE_URL` | Deploys only | Supabase session pooler connection string, for the [database](#database). Secret. Optional locally, where leaving it out records nothing; the deploy fails without it. |
 
-The process exits at startup with an error naming the variable if a required one is missing. A blank optional key or account ID counts as unset.
+The process exits at startup with an error naming the variable if a required one is missing. A blank optional key, account ID or database URL counts as unset.
 
 `OPENROUTER_MODELS` and `CLOUDFLARE_MODELS` aren't passed through the deploy, so production always uses the defaults. Change those in `src/Config.ts`.
 
@@ -173,6 +186,53 @@ Free models come and go on OpenRouter. To change the list, pick from the [free m
 
 Workers AI includes 10,000 Neurons a day for free, which covers a few hundred headlines on the default models.
 
+### Database
+
+The bot records voice activity in the office channel to a Postgres database on [Supabase](https://supabase.com). It's collected now, to decide later what to use it for. The design is in [issue #10](https://github.com/ChristopherPHolder/virtual-office-notifier/issues/10).
+
+1. Create a project at <https://supabase.com/dashboard>.
+2. Click **Connect**, pick the **Session pooler** connection string, and put it in `DATABASE_URL` with the database password filled in. Percent-encode any special characters in the password.
+
+Use the session pooler, not the direct connection: the direct one is IPv6-only unless the project has the IPv4 add-on, and GCP VMs only have IPv4 by default. The transaction pooler (port 6543) doesn't support the prepared statements the client uses.
+
+Locally, leave `DATABASE_URL` out unless you mean to record. `pnpm dev` with the production URL writes into the production data.
+
+#### What's recorded
+
+Everything lives in an `office` schema, out of the `public` schema that Supabase serves through its REST API.
+
+| Table | What's in it |
+|---|---|
+| `voice_snapshots` | One row per Discord voice-state update touching the office: joining, leaving, moving in or out, and every change inside. It has the old and new value of every field Discord sends (channel, self and server mute and deafen, camera, streaming, suppressed, request to speak and voice session), as Discord sent them. Bots are left out. `source` is `update`, or `startup` for someone already in the office when the bot started. |
+| `members` | One row per Discord user seen, with their latest display name and when they were first and last seen. `real_name` is yours to fill in by hand; the bot never writes it. |
+| `bot_sessions` | One row per run of the bot, with when it started and stopped. `stopped_at` stays empty when it didn't stop cleanly, so gaps in the data can be told apart from an empty office. |
+| `rejected_updates` | Anything the database refused to store, as JSON with the error, so it can be fixed and replayed by hand. |
+
+The `voice_activity` view turns the snapshots into readable events with names: `AlreadyThere`, `Joined`, `Left`, `Muted`/`Unmuted`, `Deafened`/`Undeafened`, `ServerMuted`/`ServerUnmuted`, `ServerDeafened`/`ServerUndeafened`, `CameraOn`/`CameraOff` and `StreamStarted`/`StreamStopped`. Anything already on when someone arrives counts as switched on, so joining muted is `Joined` and `Muted`. Deafening in Discord also mutes, so it shows as `Deafened` and `Muted`.
+
+```sql
+SELECT observed_at, coalesce(real_name, display_name) AS who, event
+FROM office.voice_activity
+ORDER BY observed_at DESC
+LIMIT 50;
+```
+
+Nothing is ever deleted. Migrations live in [`src/migrations.ts`](src/migrations.ts), run once each on the first successful connection, and only ever add.
+
+#### When the database is down
+
+The database can never stop the announcements:
+
+- Connecting happens in the background after startup, so the bot runs normally while it's down. Once connected, it logs `Connected to the database`.
+- Observations are buffered in memory and written in order by a single writer, up to 50,000 at a time. When the buffer is full, new ones are refused and logged in full.
+- If it can't connect, run the migrations or write, it retries in bursts of 5 attempts 1, 2, 4, 8 and 16 seconds apart, then waits an hour before the next burst. The entry being written keeps its place. Each failed attempt is logged with what went wrong.
+- A row the database rejects (a data or constraint error) goes to `rejected_updates` instead, so it can't block everything behind it. If that fails too, it's logged in full.
+- On shutdown it spends up to 10 seconds writing what's left, including the session's `stopped_at`. Anything still unwritten is logged in full.
+
+Anything that can't be stored is logged with an `entry` holding the full JSON, so it can be found in the [logs](#logs) and replayed by hand.
+
+The connection is encrypted and checked against Supabase's own root certificate in [`src/SupabaseCa.ts`](src/SupabaseCa.ts), which expires in April 2031.
+
 ## Development
 
 | Command | What it does |
@@ -186,7 +246,7 @@ Workers AI includes 10,000 Neurons a day for free, which covers a few hundred he
 
 CI runs typecheck, lint, test and build on every push and pull request.
 
-The tests run the program against fakes for Discord, the Slack webhook and the AI models, so they need no tokens or network access. `DiscordGateway.layerTest` feeds voice-state updates from a queue through the same occupancy tracking the real gateway uses.
+The tests run the program against fakes for Discord, the Slack webhook and the AI models, so they need no tokens or network access. `DiscordGateway.layerTest` feeds voice-state updates from a queue through the same occupancy tracking the real gateway uses. The database tests run the real migrations and SQL against an in-process Postgres ([PGlite](https://pglite.dev)), so they need no database either.
 
 TypeScript is pinned to the exact version `@effect/tsgo` supports, so upgrade the two together. The `prepare` script patches it on install.
 
@@ -241,6 +301,7 @@ This creates a `github-deploy` service account and a Workload Identity pool trus
 | `GCP_WORKLOAD_IDENTITY_PROVIDER` | The Workload Identity provider created above |
 | `GCP_SERVICE_ACCOUNT` | The `github-deploy` service account email |
 | `DISCORD_BOT_TOKEN`, `DISCORD_OFFICE_CHANNEL_ID`, `SLACK_WEBHOOK_URL` | Your local `.env` |
+| `DATABASE_URL` | The Supabase session pooler connection string. See [Database](#database). |
 | `OPENROUTER_API_KEY`, `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN` | Optional, your local `.env` |
 
 GitHub secrets are the source of truth for the app's configuration. To change a value, update the secret and re-run the latest `CI` workflow on `main`:
@@ -278,6 +339,10 @@ There's no monitoring or alerting. If announcements stop, check the logs.
 | Every announcement shows up twice | Two copies are running, for example `pnpm dev` with the production token and webhook. |
 | `Slack rejected the post` with `WebhookRevoked` | The webhook was removed or the Slack app uninstalled. Create a new webhook and update `SLACK_WEBHOOK_URL`. |
 | Posts always use the fixed headlines | Every AI model is failing. Look for `AI model couldn't write a headline` warnings and their reason. `DailyLimit` means the OpenRouter key has used up its free requests for the day. |
+| `Couldn't set up the database, retrying` in the logs | The bot can't reach the database or run the migrations. The `reason` says why, for example a wrong password in `DATABASE_URL` or a paused Supabase project. Announcements carry on, and observations are buffered until it connects. |
+| `Couldn't record to the database, retrying` in the logs | The database went away after connecting, or a write took over 10 seconds. Writing resumes where it left off once it's back. |
+| `The database rejected an update` in the logs | Postgres refused a row. It's in `office.rejected_updates` with the error. |
+| `logging this instead` or `logging it instead` in the logs | Something couldn't be stored at all: the buffer was full, the bot was shutting down, or setting it aside failed too. The `entry` annotation has the full JSON. |
 | The service has stopped and isn't restarting | systemd gave up after 5 failed starts in 10 minutes. Check the logs, then merge a fix, or update the secret and re-run the latest `CI` workflow on `main`. |
 
 ## Privacy
@@ -285,6 +350,8 @@ There's no monitoring or alerting. If announcements stop, check the logs.
 This broadcasts people's presence to a wider audience. The opening post shows who opened the office, with their Discord display name and avatar, and the empty post shows how long it was open and how many people came by. Tell the team before turning it on.
 
 The AI providers only get the instructions and a few example headlines, never names or anything else from Discord.
+
+The [database](#database) keeps a detailed record of each person's activity in the office channel: when they joined and left, and when they muted, deafened, turned on their camera or streamed, with their Discord user ID and display name, and a real name if one is filled in. Nothing is ever deleted. Tell the team it's being recorded before turning it on.
 
 ## Contributing
 

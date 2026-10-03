@@ -4,8 +4,8 @@ import { TestClock } from "effect/testing";
 
 import { DiscordGateway } from "../src/DiscordGateway.ts";
 import { MainLayer, program } from "../src/Program.ts";
-import type { VoiceStateUpdate } from "../src/OfficeEvent.ts";
-import { firstVariant, makeFakeSlack, ok, type Reply, respond, WEBHOOK_URL, withEnv } from "./fakes.ts";
+import { NO_VOICE_DETAILS, type VoiceStateUpdate } from "../src/OfficeEvent.ts";
+import { firstVariant, hang, makeFakeRecorder, makeFakeSlack, ok, type Reply, respond, WEBHOOK_URL, withEnv } from "./fakes.ts";
 
 const OFFICE = "office";
 
@@ -25,6 +25,8 @@ const update = (overrides: Partial<VoiceStateUpdate> = {}): VoiceStateUpdate => 
   oldChannelId: null,
   newChannelId: OFFICE,
   isBot: false,
+  oldDetails: NO_VOICE_DETAILS,
+  newDetails: NO_VOICE_DETAILS,
   ...overrides,
 });
 
@@ -35,12 +37,12 @@ interface LogEntry {
 }
 
 // Runs the program over the given voice state updates until the queue ends,
-// starting with `occupants` already in the office, and returns what was posted
-// to Slack and what was logged.
+// starting with `present` already in the office, and returns what was posted
+// to Slack, what was recorded and what was logged.
 const runProgram = Effect.fnUntraced(function* (
   updates: ReadonlyArray<VoiceStateUpdate>,
   replies: ReadonlyArray<Reply> = [ok],
-  occupants: ReadonlyArray<string> = [],
+  present: ReadonlyArray<VoiceStateUpdate> = [],
 ) {
   const queue = yield* Queue.unbounded<VoiceStateUpdate, Cause.Done>();
 
@@ -48,6 +50,7 @@ const runProgram = Effect.fnUntraced(function* (
   yield* Queue.end(queue);
 
   const slack = yield* makeFakeSlack(replies);
+  const recorder = yield* makeFakeRecorder();
   const logs: Array<LogEntry> = [];
 
   const captureLogs = Logger.make<unknown, void>((options) => {
@@ -64,12 +67,19 @@ const runProgram = Effect.fnUntraced(function* (
   });
 
   yield* program.pipe(
-    Effect.provide(Layer.mergeAll(DiscordGateway.layerTest(queue, new Set(occupants)), slack.layer, Logger.layer([captureLogs]))),
+    Effect.provide(
+      Layer.mergeAll(
+        DiscordGateway.layerTest(queue, new Set(present.map((update) => update.userId)), GUILD, present),
+        slack.layer,
+        recorder.layer,
+        Logger.layer([captureLogs]),
+      ),
+    ),
     withEnv(env),
     firstVariant,
   );
 
-  return { posted: yield* slack.postedTexts, bodies: yield* slack.postedBodies, logs };
+  return { posted: yield* slack.postedTexts, bodies: yield* slack.postedBodies, recorded: yield* recorder.recorded, logs };
 });
 
 const OPENED = "🎙️ *Ada* opened the virtual office — everyone's welcome to join!";
@@ -106,7 +116,7 @@ describe("program", () => {
 
   it.effect("3. ignores mute, deafen and video changes inside the office", () =>
     Effect.gen(function* () {
-      const { posted } = yield* runProgram([update({ oldChannelId: OFFICE, newChannelId: OFFICE })], [ok], ["u1"]);
+      const { posted } = yield* runProgram([update({ oldChannelId: OFFICE, newChannelId: OFFICE })], [ok], [update()]);
 
       assert.deepStrictEqual(posted, []);
     }));
@@ -176,10 +186,65 @@ describe("program", () => {
       const { posted } = yield* runProgram(
         [update({ userId: "u2", displayName: "Grace" }), leave({ userId: "u2" }), leave({ userId: "u1" })],
         [ok],
-        ["u1"],
+        [update()],
       );
 
       assert.deepStrictEqual(posted, [EMPTIED]);
+    }));
+});
+
+describe("recording", () => {
+  it.effect("records who was already there, then every update touching the office", () =>
+    Effect.gen(function* () {
+      const { recorded } = yield* runProgram(
+        [
+          update({ userId: "u2", displayName: "Grace" }),
+          update({ userId: "u2", oldChannelId: OFFICE, newChannelId: OFFICE }),
+          update({ userId: "u3", newChannelId: "lobby" }),
+          update({ userId: "bot", isBot: true }),
+          leave({ userId: "u2", newChannelId: "lobby" }),
+        ],
+        [ok],
+        [update()],
+      );
+
+      assert.deepStrictEqual(
+        recorded.map(({ source, userId, oldChannelId, newChannelId }) => ({
+          source,
+          userId,
+          oldChannelId,
+          newChannelId,
+        })),
+        [
+          { source: "startup", userId: "u1", oldChannelId: null, newChannelId: OFFICE },
+          { source: "update", userId: "u2", oldChannelId: null, newChannelId: OFFICE },
+          { source: "update", userId: "u2", oldChannelId: OFFICE, newChannelId: OFFICE },
+          { source: "update", userId: "u2", oldChannelId: OFFICE, newChannelId: "lobby" },
+        ],
+      );
+    }));
+
+  it.effect("keeps recording while a Slack post is being retried", () =>
+    Effect.gen(function* () {
+      const queue = yield* Queue.unbounded<VoiceStateUpdate, Cause.Done>();
+      const slack = yield* makeFakeSlack([hang]);
+      const recorder = yield* makeFakeRecorder();
+
+      const fiber = yield* program.pipe(
+        Effect.provide(Layer.mergeAll(DiscordGateway.layerTest(queue), slack.layer, recorder.layer)),
+        withEnv(env),
+        firstVariant,
+        Effect.forkChild,
+      );
+
+      // The first post never answers, so the office events stall behind it.
+      yield* Queue.offerAll(queue, [update(), leave(), update()]);
+
+      while ((yield* recorder.recorded).length < 3) {
+        yield* Effect.yieldNow;
+      }
+
+      yield* Fiber.interrupt(fiber);
     }));
 });
 
@@ -188,9 +253,10 @@ describe("daily reminder", () => {
     Effect.gen(function* () {
       const queue = yield* Queue.unbounded<VoiceStateUpdate, Cause.Done>();
       const slack = yield* makeFakeSlack([ok]);
+      const recorder = yield* makeFakeRecorder();
 
       const fiber = yield* program.pipe(
-        Effect.provide(Layer.merge(DiscordGateway.layerTest(queue), slack.layer)),
+        Effect.provide(Layer.mergeAll(DiscordGateway.layerTest(queue), slack.layer, recorder.layer)),
         withEnv(env),
         firstVariant,
         Effect.forkChild,

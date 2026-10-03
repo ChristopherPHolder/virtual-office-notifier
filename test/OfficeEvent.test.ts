@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import {
   isOfficeJoin,
   isOfficeLeave,
+  NO_VOICE_DETAILS,
   OfficeEvent,
   type OfficeSession,
   sessionOf,
@@ -87,7 +88,18 @@ describe("trackOccupancy", () => {
   const step = trackOccupancy(OFFICE);
   const t0 = DateTime.makeUnsafe(0);
   const later = (minutes: number) => DateTime.add(t0, { minutes });
-  const update = { userId: "u1", displayName: "Ada", avatarUrl: null, guildId: "g1", isBot: false, at: t0 };
+
+  const update = {
+    userId: "u1",
+    displayName: "Ada",
+    avatarUrl: null,
+    guildId: "g1",
+    isBot: false,
+    oldDetails: NO_VOICE_DETAILS,
+    newDetails: NO_VOICE_DETAILS,
+    at: t0,
+  };
+
   const member = { userId: "u1", displayName: "Ada", avatarUrl: null, guildId: "g1", channelId: OFFICE };
   const join = { ...update, oldChannelId: null, newChannelId: OFFICE };
   const leave = { ...update, oldChannelId: OFFICE, newChannelId: "lobby" };

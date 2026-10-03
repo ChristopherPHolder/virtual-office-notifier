@@ -1,5 +1,6 @@
 import { Effect, Layer, Option, Stream } from "effect";
 
+import { ActivityRecorder } from "./ActivityRecorder.ts";
 import { DiscordGateway } from "./DiscordGateway.ts";
 import { OfficeEvent } from "./OfficeEvent.ts";
 import { reminders } from "./Reminder.ts";
@@ -22,6 +23,7 @@ const eventAnnotations = OfficeEvent.$match({
 export const program = Effect.gen(function* () {
   const gateway = yield* DiscordGateway;
   const slack = yield* SlackNotifier;
+  const recorder = yield* ActivityRecorder;
 
   yield* Effect.logInfo("Watching the virtual office");
 
@@ -32,15 +34,24 @@ export const program = Effect.gen(function* () {
     }),
   );
 
-  yield* Stream.runForEach(events, (event) =>
+  const announce = Stream.runForEach(events, (event) =>
     slack.notify(event).pipe(
       Effect.andThen(Effect.logInfo("Announced office event").pipe(Effect.annotateLogs({ outcome: "posted" }))),
       Effect.catchTag("SlackError", logSlackError),
       Effect.annotateLogs(eventAnnotations(event)),
     ),
   );
+
+  // Its own fiber, so a slow Slack post never holds up recording.
+  const record = Stream.runForEach(gateway.voiceObservations, recorder.record);
+
+  yield* Effect.all([announce, record], { concurrency: "unbounded", discard: true });
 });
 
 // Slack is built first, so a missing webhook URL fails before logging in to
-// Discord.
-export const MainLayer = DiscordGateway.layer.pipe(Layer.provideMerge(SlackNotifier.layer));
+// Discord. Recording connects to the database in the background and never
+// fails startup.
+export const MainLayer = DiscordGateway.layer.pipe(
+  Layer.provideMerge(SlackNotifier.layer),
+  Layer.merge(ActivityRecorder.layer),
+);

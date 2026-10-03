@@ -56,6 +56,7 @@ Tests live in `test/` and use [`@effect/vitest`](https://www.npmjs.com/package/@
 - [`test/fakes.ts`](test/fakes.ts) has a fake Slack webhook that serves scripted replies and records every request, and a helper that pins the random phrasing so tests can assert the exact text.
 - `DiscordGateway.layerTest` feeds voice-state updates from a queue through the same occupancy tracking the real gateway uses.
 - `HeadlineWriter.layerProviders` takes fake language models, so the provider fallback can be tested without calling a real one.
+- Database code runs against [PGlite](https://pglite.dev), an in-process Postgres, with the real migrations. Give it `columnNaming` from `src/Database.ts` so column names convert the same way as in production. `test/fakes.ts` also has a fake recorder for program tests.
 
 ### Adding a configuration variable
 

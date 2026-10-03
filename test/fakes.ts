@@ -7,9 +7,11 @@ import {
   HttpClientResponse,
 } from "effect/http";
 
+import { ActivityRecorder } from "../src/ActivityRecorder.ts";
 import { HeadlineWriter } from "../src/HeadlineWriter.ts";
 import { SlackNotifier } from "../src/SlackNotifier.ts";
 import { OfficeEvent } from "../src/OfficeEvent.ts";
+import type { VoiceObservation } from "../src/VoiceObservation.ts";
 
 export const WEBHOOK_URL = "https://hooks.slack.com/services/TEST/WEBHOOK/secret";
 
@@ -81,6 +83,18 @@ export const makeFakeSlack = Effect.fnUntraced(function* (
     ),
     postedBodies: Ref.get(requests).pipe(Effect.map((sent) => sent.map((request) => JSON.parse(requestText(request))))),
   };
+});
+
+// Collects what the program would record, without a database.
+export const makeFakeRecorder = Effect.fnUntraced(function* () {
+  const recorded = yield* Ref.make<ReadonlyArray<VoiceObservation>>([]);
+
+  const layer = Layer.succeed(
+    ActivityRecorder,
+    ActivityRecorder.of({ record: (observation) => Ref.update(recorded, (all) => [...all, observation]) }),
+  );
+
+  return { layer, recorded: Ref.get(recorded) };
 });
 
 export const withEnv = (env: Record<string, string>) =>
