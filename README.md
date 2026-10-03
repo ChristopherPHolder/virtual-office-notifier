@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/ChristopherPHolder/virtual-office-notifier/actions/workflows/ci.yml/badge.svg)](https://github.com/ChristopherPHolder/virtual-office-notifier/actions/workflows/ci.yml)
 
-Posts to Slack when someone opens our Discord "virtual office" voice channel, and again when it empties out, so people know when they can jump in. On weekdays it also posts a reminder to come hang out. It also records what happens in the office channel to a Postgres database.
+Posts to Slack when someone opens our Discord "virtual office" voice channel, and again when it empties out, so people know when they can jump in. On weekdays it also posts a reminder to come hang out, and a few bits of AI-written banter about what's been going on in the office. It also records what happens in the office channel to a Postgres database.
 
 - [Features](#features)
 - [What it posts](#what-it-posts)
@@ -21,6 +21,7 @@ Posts to Slack when someone opens our Discord "virtual office" voice channel, an
 - **Announces the edges of a session only.** The first person in opens the office and the last person out empties it. Joins and leaves in between aren't announced, to keep the Slack channel quiet.
 - **Recaps each session** with how long the office was open and how many different people came by.
 - **Weekday reminder** at 11:15 UTC+2.
+- **Office banter.** Up to five times a working day, at random, an AI model reads what happened in the office and posts something playful about it.
 - **Slack cards** with a button that opens the office in Discord, the opener's avatar, and times shown in each reader's own time zone.
 - **AI-written headlines** from free models on OpenRouter or Cloudflare Workers AI, falling back to fixed phrasings.
 - **Restart-safe.** It counts whoever is already in the channel at startup, so a restart mid-session doesn't announce the office opening again.
@@ -52,6 +53,14 @@ Each post is a Block Kit card. With the fixed phrasings, they look like this:
 
 When an AI model writes the headline and button label, the card adds a `✨ Headline by <model>` line. See [AI headlines](#ai-headlines).
 
+Banter is always written by an AI model, from what's actually happened in the office:
+
+> 🎬 Wednesday's crew arrived like a flash mob: Barbara, Alan, Grace and Linus all joined within 8 minutes, cameras snapped on in unison, then off together 40 minutes later.
+>
+> `🚪 Join the ensemble`
+>
+> ✨ Banter by nvidia/nemotron-3-ultra-550b-a55b:free · 🤖 AI is a hallucination machine.
+
 ### When it posts
 
 | Post | Trigger |
@@ -59,6 +68,7 @@ When an AI model writes the headline and button label, the card adds a `✨ Head
 | Opened | The first person joins the empty office channel. Moving in from another voice channel counts as joining. |
 | Emptied | The last person leaves. Moving to another voice channel counts as leaving. The recap is left out for a session that was already under way when the bot started, since it missed the beginning. |
 | Reminder | Weekdays at 11:15 UTC+2. It's a fixed offset, so it doesn't shift with daylight saving. Skipped if the office channel wasn't found at startup, since there's nothing to link to. |
+| Banter | At random, between 1 and 2½ hours apart, from 09:00 to 18:00 UTC+2 on weekdays, and at most 5 a day. See [Banter](#banter). |
 
 It only watches the one office channel and ignores bots. Mute, deafen and video changes aren't announced, only [recorded](#database).
 
@@ -74,7 +84,8 @@ Discord only pushes voice-state changes over its Gateway WebSocket, so this is a
 flowchart LR
   Discord[Discord Gateway] -->|voiceStateUpdate| Gateway[DiscordGateway]
   Gateway -->|Opened / Emptied| Program
-  Schedule[Weekday schedule] -->|Reminder| Program
+  Schedule[Weekday schedule] -->|Reminder / Banter| Program
+  Schedule <-.->|activity and banter count| Postgres
   Program --> Notifier[SlackNotifier]
   Notifier <-->|headline + label| Writer[HeadlineWriter]
   Writer <-.->|optional| AI[OpenRouter / Workers AI]
@@ -95,7 +106,10 @@ Recording runs alongside, in its own fiber, so a slow Slack post never holds it 
 | [`src/DiscordGateway.ts`](src/DiscordGateway.ts) | Logs in to Discord, finds the office channel and turns voice-state updates into office events and observations to record. |
 | [`src/OfficeEvent.ts`](src/OfficeEvent.ts) | The event types and the occupancy tracking that decides when the office opens or empties. |
 | [`src/Reminder.ts`](src/Reminder.ts) | The weekday reminder schedule. |
-| [`src/HeadlineWriter.ts`](src/HeadlineWriter.ts) | Asks the AI providers for a headline and button label, and checks the reply. |
+| [`src/Banter.ts`](src/Banter.ts) | When to post banter, which stretch of activity it covers, and the log the AI model reads. |
+| [`src/OfficeHistory.ts`](src/OfficeHistory.ts) | Reads the recorded activity and who's in, and keeps count of the banter posted. |
+| [`src/Storage.ts`](src/Storage.ts) | Sets up the database once for recording and reading, or turns both off without `DATABASE_URL`. |
+| [`src/HeadlineWriter.ts`](src/HeadlineWriter.ts) | Asks the AI providers for a headline or banter and a button label, and checks the reply. |
 | [`src/SlackMessage.ts`](src/SlackMessage.ts) | Builds the Block Kit message, including the fixed phrasings. |
 | [`src/SlackNotifier.ts`](src/SlackNotifier.ts) | Posts to the webhook, with retries and error classification. |
 | [`src/VoiceObservation.ts`](src/VoiceObservation.ts) | Decides which voice-state updates are worth recording. |
@@ -135,6 +149,7 @@ All configuration comes from environment variables. Copy `.env.example` to `.env
 | `SLACK_WEBHOOK_URL` | Yes | Slack Incoming Webhook URL. Secret: anyone with it can post to the channel. |
 | `OPENROUTER_API_KEY` | No | [OpenRouter](https://openrouter.ai/settings/keys) API key for AI headlines. Secret. |
 | `OPENROUTER_MODELS` | No | Comma-separated OpenRouter models to try, preferred first. Defaults to `DEFAULT_OPENROUTER_MODELS` in [`src/Config.ts`](src/Config.ts). |
+| `OPENROUTER_BANTER_MODELS` | No | Comma-separated OpenRouter models to try for [banter](#banter), preferred first. Defaults to `DEFAULT_OPENROUTER_BANTER_MODELS` in [`src/Config.ts`](src/Config.ts). |
 | `CLOUDFLARE_ACCOUNT_ID` | No | Cloudflare account ID, for AI headlines from Workers AI. Needs `CLOUDFLARE_API_TOKEN` too. |
 | `CLOUDFLARE_API_TOKEN` | No | Workers AI API token. Secret. |
 | `CLOUDFLARE_MODELS` | No | Comma-separated Workers AI models to try, preferred first. Defaults to `DEFAULT_CLOUDFLARE_MODELS` in [`src/Config.ts`](src/Config.ts), all within the free daily allocation. |
@@ -145,7 +160,7 @@ All configuration comes from environment variables. Copy `.env.example` to `.env
 
 The process exits at startup with an error naming the variable if a required one is missing. A blank optional key, account ID or database URL counts as unset.
 
-`OPENROUTER_MODELS` and `CLOUDFLARE_MODELS` aren't passed through the deploy, so production always uses the defaults. Change those in `src/Config.ts`.
+`OPENROUTER_MODELS`, `OPENROUTER_BANTER_MODELS` and `CLOUDFLARE_MODELS` aren't passed through the deploy, so production always uses the defaults. Change those in `src/Config.ts`.
 
 ### Discord bot
 
@@ -168,6 +183,7 @@ Every post (opened, emptied and the reminder) gets a fresh headline and join but
 
 - The model never sees anyone's name. For an opened office it writes a `{name}` placeholder that's filled in afterwards, and the other posts don't name anyone.
 - The reply must be exactly two lines: a headline of up to 160 characters and a button label of up to 30. The headline has the placeholder exactly once for an opened office and not at all otherwise, and neither line may contain Slack link syntax. The reply is escaped before it's posted.
+- Nothing checks that what the model says is true, and it does get things wrong, so every bit of banter says it's AI-written and may be made up.
 
 **Which model writes it**
 
@@ -191,6 +207,42 @@ Free models come and go on OpenRouter. To change the list, pick from the [free m
 
 Workers AI includes 10,000 Neurons a day for free, which covers a few hundred headlines on the default models.
 
+### Banter
+
+Needs the [database](#database) and at least one [AI provider](#ai-headlines). Without the database, every chance is skipped with a `Skipped banter` warning.
+
+**When it posts**
+
+- After a random wait of 60 to 150 minutes, it checks whether it's 09:00 to 18:00 UTC+2 on a weekday, and whether fewer than 5 have gone out since midnight UTC+2. If so, it posts; either way, it waits again.
+- Each one is stored in `banter_posts` before the AI writes it, so the daily limit holds across restarts, and one the AI couldn't write still counts. That keeps it to at most 5 attempts' worth of AI requests a day.
+- If every model fails, nothing is posted. There's no fixed fallback.
+
+**What the model sees and returns**
+
+- It picks one stretch of time at random: today so far, yesterday and today, this week so far (from Monday), or last week.
+- The model gets the time, who's in the office right now, and every entry of the [`voice_activity`](#whats-recorded) view in that stretch, as is, with times in UTC+2: `Wed 30 Sep 15:00 Barbara CameraOn`. A busy stretch is cut to its latest 400 entries, and the model is told how many were left out.
+- People are named with their `real_name` when it's filled in, or their Discord display name. Who's in right now comes from what this run of the bot recorded.
+- The prompt asks for something playful and warm, never mean, that only says what the log shows. The reply must be exactly two lines: a message of up to 300 characters and a button label of up to 30, with no Slack link syntax. The reply is escaped before it's posted.
+- Nothing checks that what the model says is true, and it does get things wrong, so every bit of banter says it's AI-written and may be made up.
+
+**Which model writes it**
+
+The same way as the headlines, except OpenRouter uses `OPENROUTER_BANTER_MODELS`. Its defaults leave out the `openrouter/free` router, because it often picks a small model that misses the point of the log or makes things up.
+
+**Trying it on made-up data**
+
+[`scripts/try-banter.ts`](scripts/try-banter.ts) runs the scenarios in [`scripts/banter-scenarios.ts`](scripts/banter-scenarios.ts): a busy Friday, an empty office, a mute marathon, a lone regular, last week's early bird and a camera party. It never posts to Slack or touches the database.
+
+```bash
+node --env-file=.env scripts/try-banter.ts
+```
+
+On its own it only prints the prompts. With `--call-ai` it asks one OpenRouter model once per scenario, with no fallback, so a run is at most 6 requests. `BANTER_MODEL` picks the model (the first of the banter defaults otherwise) and `BANTER_SCENARIO` runs just one scenario by name.
+
+```bash
+node --env-file=.env scripts/try-banter.ts --call-ai
+```
+
 ### Database
 
 The bot records voice activity in the office channel to a Postgres database on [Supabase](https://supabase.com). It's collected now, to decide later what to use it for. The design is in [issue #10](https://github.com/ChristopherPHolder/virtual-office-notifier/issues/10).
@@ -212,6 +264,7 @@ Everything lives in an `office` schema, out of the `public` schema that Supabase
 | `members` | One row per Discord user seen, with their latest display name and when they were first and last seen. `real_name` is yours to fill in by hand; the bot never writes it. |
 | `bot_sessions` | One row per run of the bot, with when it started and stopped. `stopped_at` stays empty when it didn't stop cleanly, so gaps in the data can be told apart from an empty office. |
 | `rejected_updates` | Anything the database refused to store, as JSON with the error, so it can be fixed and replayed by hand. |
+| `banter_posts` | One row per bit of [banter](#banter), with when and which stretch of time it covered, so the daily limit holds across restarts. |
 
 The `voice_activity` view turns the snapshots into readable events with names: `AlreadyThere`, `Joined`, `Left`, `Muted`/`Unmuted`, `Deafened`/`Undeafened`, `ServerMuted`/`ServerUnmuted`, `ServerDeafened`/`ServerUndeafened`, `CameraOn`/`CameraOff` and `StreamStarted`/`StreamStopped`. Anything already on when someone arrives counts as switched on, so joining muted is `Joined` and `Muted`. Deafening in Discord also mutes, so it shows as `Deafened` and `Muted`.
 
@@ -355,6 +408,7 @@ gh secret set SENTRY_DSN
 | `Office voice channel not found` in the logs | `DISCORD_OFFICE_CHANNEL_ID` is wrong, or the bot isn't in the server or can't view the channel. It keeps running in case the bot is added later, but reminders stay off until it restarts. |
 | Every announcement shows up twice | Two copies are running, for example `pnpm dev` with the production token and webhook. |
 | `Slack rejected the post` with `WebhookRevoked` | The webhook was removed or the Slack app uninstalled. Create a new webhook and update `SLACK_WEBHOOK_URL`. |
+| No banter shows up | Look for `Skipped banter` warnings: the reason says why the database couldn't be read. Without the database there's no banter at all. If every AI model failed, the log says `Nothing to announce, no AI model wrote the banter`. |
 | Posts always use the fixed headlines | Every AI model is failing. Look for `AI model couldn't write a headline` warnings and their reason. `DailyLimit` means the OpenRouter key has used up its free requests for the day. |
 | `Couldn't set up the database, retrying` in the logs | The bot can't reach the database or run the migrations. The `reason` says why, for example a wrong password in `DATABASE_URL` or a paused Supabase project. Announcements carry on, and observations are buffered until it connects. |
 | `Couldn't record to the database, retrying` in the logs | The database went away after connecting, or a write took over 10 seconds. Writing resumes where it left off once it's back. |
@@ -366,7 +420,9 @@ gh secret set SENTRY_DSN
 
 This broadcasts people's presence to a wider audience. The opening post shows who opened the office, with their Discord display name and avatar, and the empty post shows how long it was open and how many people came by. Tell the team before turning it on.
 
-The AI providers only get the instructions and a few example headlines, never names or anything else from Discord.
+For headlines, the AI providers only get the instructions and a few example headlines, never names or anything else from Discord.
+
+[Banter](#banter) is different: the model gets the recorded office activity for up to a week, with everyone's name, and can name people in what it writes. The defaults are free models, and providers of free models may keep and train on what they're sent. Tell the team before turning it on.
 
 The [database](#database) keeps a detailed record of each person's activity in the office channel: when they joined and left, and when they muted, deafened, turned on their camera or streamed, with their Discord user ID and display name, and a real name if one is filled in. Nothing is ever deleted. Tell the team it's being recorded before turning it on.
 

@@ -157,7 +157,7 @@ const retrySchedule = Schedule.exponential("1 second").pipe(
 export class SlackNotifier extends Context.Service<
   SlackNotifier,
   {
-    notify(event: OfficeEvent): Effect.Effect<void, SlackError>;
+    notify(event: OfficeEvent): Effect.Effect<boolean, SlackError>;
   }
 >()("virtual-office-notifier/SlackNotifier") {
   static readonly layerNoDeps = Layer.effect(
@@ -186,7 +186,10 @@ export class SlackNotifier extends Context.Service<
 
         const generated = yield* headlines.write(event);
 
-        yield* post(formatMessage(event, variant, generated)).pipe(Effect.retry(retrySchedule));
+        return yield* Option.match(formatMessage(event, variant, generated), {
+          onNone: () => Effect.succeed(false),
+          onSome: (message) => post(message).pipe(Effect.retry(retrySchedule), Effect.as(true)),
+        });
       });
 
       return SlackNotifier.of({ notify });

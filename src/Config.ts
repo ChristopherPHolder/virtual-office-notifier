@@ -35,6 +35,12 @@ export const DEFAULT_OPENROUTER_MODELS: Array.NonEmptyReadonlyArray<string> = [
   "dots-studio/dots-3-note-preview:free",
 ];
 
+export const DEFAULT_OPENROUTER_BANTER_MODELS: Array.NonEmptyReadonlyArray<string> = [
+  "nvidia/nemotron-3-ultra-550b-a55b:free",
+  "nvidia/nemotron-3-super-120b-a12b:free",
+  "inclusionai/ling-3.0-flash-sante:free",
+];
+
 // All within Workers AI's free daily allocation.
 export const DEFAULT_CLOUDFLARE_MODELS: Array.NonEmptyReadonlyArray<string> = [
   "@cf/nvidia/nemotron-3-120b-a12b",
@@ -53,6 +59,7 @@ export const AiConfig = Config.all({
   openRouter: Config.all({
     apiKey: optionalSecret("OPENROUTER_API_KEY"),
     models: modelList("OPENROUTER_MODELS", DEFAULT_OPENROUTER_MODELS),
+    banterModels: modelList("OPENROUTER_BANTER_MODELS", DEFAULT_OPENROUTER_BANTER_MODELS),
   }),
   cloudflare: Config.all({
     accountId: optionalSecret("CLOUDFLARE_ACCOUNT_ID"),
