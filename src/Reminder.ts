@@ -3,13 +3,15 @@ import { Cron, DateTime, Effect, Schedule, Stream } from "effect";
 import { OfficeEvent, type OfficeLocation } from "./OfficeEvent.ts";
 
 // Weekdays at 11:15 UTC+2. A fixed offset, so it doesn't follow daylight saving.
+export const OFFICE_TIME_ZONE = DateTime.zoneMakeOffset(2 * 60 * 60 * 1000);
+
 const reminderCron = Cron.make({
   minutes: [15],
   hours: [11],
   days: [],
   months: [],
   weekdays: [1, 2, 3, 4, 5],
-  tz: DateTime.zoneMakeOffset(2 * 60 * 60 * 1000),
+  tz: OFFICE_TIME_ZONE,
 });
 
 export const reminders = (office: OfficeLocation): Stream.Stream<OfficeEvent> =>

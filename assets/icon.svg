@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 130 130" width="512" height="512">
+  <title>Virtual Office Notifier</title>
+  <rect width="130" height="130" rx="30" fill="#2B2D6E"/>
+  <g transform="translate(2,-5)">
+  <polygon points="44,112 90,112 104,124 38,124" fill="#4A4C9E"/>
+  <rect x="40" y="30" width="54" height="82" rx="3" fill="#16174A"/>
+  <rect x="44" y="34" width="46" height="78" fill="#FFC857"/>
+  <circle cx="57" cy="97" r="11" fill="#FF8FA3" stroke="#FFC857" stroke-width="4"/>
+  <circle cx="78" cy="97" r="10" fill="#A7F3D0" stroke="#FFC857" stroke-width="4"/>
+  <circle cx="68" cy="80" r="12" fill="#FFFFFF" stroke="#FFC857" stroke-width="4"/>
+  <path d="M53 80 A15 15 0 0 1 83 80" fill="none" stroke="#2B2D6E" stroke-width="4" stroke-linecap="round"/>
+  <rect x="50" y="74" width="6" height="12" rx="2.5" fill="#2B2D6E"/>
+  <rect x="80" y="74" width="6" height="12" rx="2.5" fill="#2B2D6E"/>
+  <polygon points="40,30 22,22 22,120 40,112" fill="#6166E0"/>
+  <polygon points="37,37 26,33 26,64 37,64" fill="#4B4FC0"/>
+  <polygon points="37,76 26,75 26,108 37,104" fill="#4B4FC0"/>
+  <circle cx="31" cy="70" r="2.5" fill="#FFC857"/>
+  </g>
+</svg>

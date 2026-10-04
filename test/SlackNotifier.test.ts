@@ -1,8 +1,9 @@
 import { assert, describe, it } from "@effect/vitest";
-import { Effect, Fiber, Layer, Random } from "effect";
+import { Effect, Fiber, Layer, Option, Random } from "effect";
 import { TestClock } from "effect/testing";
 
 import { HeadlineWriter } from "../src/HeadlineWriter.ts";
+import { OfficeEvent } from "../src/OfficeEvent.ts";
 import {
   InvalidPayload,
   SlackNotifier,
@@ -49,7 +50,25 @@ describe("SlackNotifier", () => {
       const requests = yield* slack.requests;
       assert.strictEqual(requests.length, 1);
       assert.strictEqual(requests[0]?.url, WEBHOOK_URL);
-      assert.deepStrictEqual(JSON.parse(requestText(requests[0]!)), formatMessage(opened, 0));
+      assert.deepStrictEqual(JSON.parse(requestText(requests[0]!)), Option.getOrThrow(formatMessage(opened, 0)));
+    }));
+
+  it.effect("posts nothing for banter no AI model could write", () =>
+    Effect.gen(function* () {
+      const slack = yield* makeSlack([ok]);
+
+      const banter = OfficeEvent.Banter({
+        guildId: "g1",
+        channelId: "c1",
+        at: opened.at,
+        period: "Today",
+        activityOldestFirst: [],
+        olderEntriesLeftOut: 0,
+        present: [],
+      });
+
+      assert.isFalse(yield* slack.notifier.notify(banter));
+      assert.deepStrictEqual(yield* slack.requests, []);
     }));
 
   it.effect("posts a generated headline when the office opens", () =>

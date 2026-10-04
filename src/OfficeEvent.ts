@@ -19,6 +19,22 @@ export interface SessionRecap {
   readonly visitors: number;
 }
 
+export interface ActivityEntry {
+  readonly at: DateTime.Utc;
+  readonly who: string;
+  readonly event: string;
+}
+
+export type BanterPeriod = "Today" | "SinceYesterday" | "ThisWeek" | "LastWeek";
+
+export interface BanterContext {
+  readonly at: DateTime.Utc;
+  readonly period: BanterPeriod;
+  readonly activityOldestFirst: ReadonlyArray<ActivityEntry>;
+  readonly olderEntriesLeftOut: number;
+  readonly present: ReadonlyArray<string>;
+}
+
 // Only the edges of a session are announced: the first person in opens the
 // office, and the last person out leaves it empty. Reminders come from a
 // schedule rather than from Discord.
@@ -28,6 +44,7 @@ export type OfficeEvent = Data.TaggedEnum<{
   // missed how it started.
   Emptied: OfficeMember & { readonly at: DateTime.Utc; readonly recap: Option.Option<SessionRecap> };
   Reminder: OfficeLocation & { readonly at: DateTime.Utc };
+  Banter: OfficeLocation & BanterContext;
 }>;
 
 export const OfficeEvent = Data.taggedEnum<OfficeEvent>();
