@@ -1,3 +1,5 @@
+<p align="center"><img src="assets/icon.svg" alt="Virtual Office Notifier icon" width="128"></p>
+
 # Virtual Office Notifier
 
 [![CI](https://github.com/ChristopherPHolder/virtual-office-notifier/actions/workflows/ci.yml/badge.svg)](https://github.com/ChristopherPHolder/virtual-office-notifier/actions/workflows/ci.yml)
