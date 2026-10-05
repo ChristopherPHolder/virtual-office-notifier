@@ -1,6 +1,6 @@
 # Virtual Office Notifier
 
-[![CI](https://github.com/ChristopherPHolder/virtual-office-notifier/actions/workflows/ci.yml/badge.svg)](https://github.com/ChristopherPHolder/virtual-office-notifier/actions/workflows/ci.yml)
+[![CI](https://github.com/push-based/virtual-office-notifier/actions/workflows/ci.yml/badge.svg)](https://github.com/push-based/virtual-office-notifier/actions/workflows/ci.yml)
 
 Posts to Slack when someone opens our Discord "virtual office" voice channel, and again when it empties out, so people know when they can jump in. On weekdays it also posts a reminder to come hang out. It also records what happens in the office channel to a Postgres database.
 
@@ -64,7 +64,7 @@ It only watches the one office channel and ignores bots. Mute, deafen and video 
 
 The fixed opened and emptied headlines are picked at random from a few phrasings. The reminder rotates through its phrasings by date, so each one comes up once before any repeats.
 
-The original design is in [issue #1](https://github.com/ChristopherPHolder/virtual-office-notifier/issues/1).
+The original design is in [issue #1](https://github.com/push-based/virtual-office-notifier/issues/1).
 
 ## How it works
 
@@ -112,7 +112,7 @@ Recording runs alongside, in its own fiber, so a slow Slack post never holds it 
 You'll need Node 26 (see `.nvmrc`), pnpm, a [Discord bot](#discord-bot) and a [Slack webhook](#slack-webhook).
 
 ```bash
-git clone https://github.com/ChristopherPHolder/virtual-office-notifier.git
+git clone https://github.com/push-based/virtual-office-notifier.git
 cd virtual-office-notifier
 pnpm install
 cp .env.example .env   # then fill in the values
@@ -193,7 +193,7 @@ Workers AI includes 10,000 Neurons a day for free, which covers a few hundred he
 
 ### Database
 
-The bot records voice activity in the office channel to a Postgres database on [Supabase](https://supabase.com). It's collected now, to decide later what to use it for. The design is in [issue #10](https://github.com/ChristopherPHolder/virtual-office-notifier/issues/10).
+The bot records voice activity in the office channel to a Postgres database on [Supabase](https://supabase.com). It's collected now, to decide later what to use it for. The design is in [issue #10](https://github.com/push-based/virtual-office-notifier/issues/10).
 
 1. Create a project at <https://supabase.com/dashboard>.
 2. Click **Connect**, pick the **Session pooler** connection string, and put it in `DATABASE_URL` with the database password filled in. Percent-encode any special characters in the password.

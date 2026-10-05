@@ -6,10 +6,10 @@
 # OS Login, and stores the provider and account names as GitHub secrets.
 #
 # Run from the repo root with gcloud pointed at the right project and gh logged
-# in to the account that owns the repo. Also uploads the app secrets from .env.
+# in to an account with admin access to the repo. Also uploads the app secrets from .env.
 set -euo pipefail
 
-REPO=ChristopherPHolder/virtual-office-notifier
+REPO=push-based/virtual-office-notifier
 INSTANCE=${DEPLOY_INSTANCE:-virtual-office-notifier}
 ZONE=${DEPLOY_ZONE:-us-central1-a}
 PROJECT_ID=${DEPLOY_PROJECT:-$(gcloud config get-value project)}

@@ -6,7 +6,7 @@ Only the latest `main` is supported. It's what's deployed, and there are no rele
 
 ## Reporting a vulnerability
 
-Please don't open a public issue. Report it privately through [GitHub's private vulnerability reporting](https://github.com/ChristopherPHolder/virtual-office-notifier/security/advisories/new), with what you found, how to reproduce it and what an attacker could do with it.
+Please don't open a public issue. Report it privately through [GitHub's private vulnerability reporting](https://github.com/push-based/virtual-office-notifier/security/advisories/new), with what you found, how to reproduce it and what an attacker could do with it.
 
 I'd especially like to hear about:
 
