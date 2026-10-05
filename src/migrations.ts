@@ -130,4 +130,18 @@ export const migrations = Migrator.fromRecord({
 
     yield* sql.unsafe(voiceActivityView);
   }),
+
+  "0002_record_banter_posts": Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient;
+
+    yield* sql`
+      CREATE TABLE office.banter_posts (
+        id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+        posted_at timestamptz NOT NULL,
+        period text NOT NULL
+      )
+    `;
+
+    yield* sql`CREATE INDEX banter_posts_posted_at ON office.banter_posts (posted_at)`;
+  }),
 });

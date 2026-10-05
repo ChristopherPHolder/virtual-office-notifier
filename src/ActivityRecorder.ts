@@ -17,7 +17,6 @@ import {
 } from "effect";
 
 import { ActivityLog, ActivityLogError, Outage } from "./ActivityLog.ts";
-import { DatabaseConfig } from "./Config.ts";
 import { Database, DatabaseUnavailable, describeError, reconnectSchedule } from "./Database.ts";
 import type { VoiceObservation } from "./VoiceObservation.ts";
 
@@ -80,7 +79,7 @@ export class RecordingDisabled extends Schema.TaggedError<RecordingDisabled>()("
   }
 }
 
-const report = (error: UpdateNotStored | UpdateSetAside | RecordingDisabled | DatabaseUnavailable) =>
+const report = (error: UpdateNotStored | UpdateSetAside | DatabaseUnavailable) =>
   ErrorReporter.report(Cause.fail(error));
 
 // Anything that can't be stored is logged in full instead, so it's never lost
@@ -214,33 +213,4 @@ export class ActivityRecorder extends Context.Service<
   );
 
   static readonly layerDisabled = Layer.succeed(ActivityRecorder, ActivityRecorder.of({ record: () => Effect.void }));
-
-  // What the bot runs with. It never fails, so the database can't stop the
-  // announcements: without DATABASE_URL nothing is recorded.
-  static readonly layer = Layer.unwrap(
-    Effect.gen(function* () {
-      const { url } = yield* DatabaseConfig;
-
-      return Option.match(url, {
-        onNone: () =>
-          ActivityRecorder.layerDisabled.pipe(
-            Layer.tap(() => Effect.logInfo("DATABASE_URL isn't set, so nothing is recorded")),
-          ),
-        onSome: (url) =>
-          ActivityRecorder.layerNoDeps.pipe(
-            Layer.provide(Layer.provideMerge(ActivityLog.layer, Database.layer(url))),
-            Layer.catch((error) =>
-              ActivityRecorder.layerDisabled.pipe(
-                Layer.tap(() =>
-                  Effect.logError("Couldn't create the database client, so nothing is recorded").pipe(
-                    Effect.annotateLogs({ reason: describeError(error) }),
-                    Effect.andThen(report(new RecordingDisabled({ reason: describeError(error) }))),
-                  ),
-                ),
-              ),
-            ),
-          ),
-      });
-    }),
-  );
 }

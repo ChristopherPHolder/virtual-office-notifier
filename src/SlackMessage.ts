@@ -96,6 +96,14 @@ export const reminderHeadlines: Variants = [
   "🎲 Today's forecast: 100% chance of good company in the virtual office.",
 ];
 
+export const banterExamples: Variants = [
+  "🐦 Sam has been first into the office every single day this week. At this point the chairs are setting themselves out for Sam.",
+  "🎙️ Priya has muted and unmuted 14 times today. Either a very dramatic debate or a very persistent dog.",
+  "🦗 Not a single visitor in the virtual office today. The chairs have started a book club. It's going badly.",
+  "📸 Jo's camera made a rare 3-minute appearance on Tuesday. Scientists are still studying the footage.",
+  "👯 Kai and Noor have turned up within five minutes of each other three days running. Coincidence? The office has its theories.",
+];
+
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 // Counts Mondays to Fridays since the epoch, so consecutive weekdays get
@@ -184,6 +192,21 @@ const buttonLabel = (generated: Option.Option<GeneratedHeadline>, fixed: string)
 const credit = (generated: Option.Option<GeneratedHeadline>): Option.Option<string> =>
   Option.map(generated, ({ model }) => `✨ Headline by ${escapeSlackText(model)}`);
 
+export const AI_DISCLAIMER = "🤖 AI is a hallucination machine.";
+
+const banterMessage = (office: OfficeLocation, { template, button, model }: GeneratedHeadline): SlackMessage => {
+  const text = escapeSlackText(template);
+
+  return {
+    text,
+    blocks: [
+      headline(text, Option.none()),
+      joinButton(office, button),
+      context(`✨ Banter by ${escapeSlackText(model)}`, AI_DISCLAIMER),
+    ],
+  };
+};
+
 // `variant` picks one of the fixed phrasings, so repeated posts don't all read
 // the same. Reminders ignore it and rotate by date instead, so every phrasing
 // comes up once before any repeats.
@@ -191,26 +214,26 @@ export const formatMessage = (
   event: OfficeEvent,
   variant: number,
   generated: Option.Option<GeneratedHeadline> = Option.none(),
-): SlackMessage =>
+): Option.Option<SlackMessage> =>
   OfficeEvent.$match(event, {
     Opened: (member) => {
       const name = `*${escapeSlackText(member.displayName)}*`;
       const text = headlineText(generated, () => pick(openedHeadlines(name), variant), name);
       const avatar = Option.map(Option.fromNullOr(member.avatarUrl), (url) => ({ url, name: member.displayName }));
 
-      return {
+      return Option.some({
         text,
         blocks: [
           headline(text, avatar),
           joinButton(member, buttonLabel(generated, JOIN_LABEL)),
           context(`🔊 Opened on Discord at ${slackTime(member.at)}`, ...Option.toArray(credit(generated))),
         ],
-      };
+      });
     },
     Emptied: (member) => {
       const text = headlineText(generated, () => pick(emptiedHeadlines, variant));
 
-      return {
+      return Option.some({
         text,
         blocks: [
           headline(text, Option.none()),
@@ -218,18 +241,19 @@ export const formatMessage = (
           joinButton(member, buttonLabel(generated, JUMP_IN_LABEL)),
           context(`🔇 Emptied at ${slackTime(member.at)}`, ...Option.toArray(credit(generated))),
         ],
-      };
+      });
     },
     Reminder: (office) => {
       const text = headlineText(generated, () => pick(reminderHeadlines, weekdaysSinceEpoch(office.at)));
 
-      return {
+      return Option.some({
         text,
         blocks: [
           headline(text, Option.none()),
           joinButton(office, buttonLabel(generated, JOIN_LABEL)),
           ...Option.toArray(Option.map(credit(generated), context)),
         ],
-      };
+      });
     },
+    Banter: (office) => Option.map(generated, (written) => banterMessage(office, written)),
   });

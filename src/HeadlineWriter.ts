@@ -21,9 +21,11 @@ import {
 import { AiError, LanguageModel, Model, type Response } from "effect/ai";
 import type { HttpClient } from "effect/http";
 
+import { banterLog } from "./Banter.ts";
 import { AiConfig } from "./Config.ts";
 import { OfficeEvent } from "./OfficeEvent.ts";
 import {
+  banterExamples,
   emptiedHeadlines,
   type GeneratedHeadline,
   JOIN_LABEL,
@@ -64,6 +66,8 @@ export const OpenedReply = ReplyWith(Line(10, 160, /^[^{}<>]*\{name\}[^{}<>]*$/)
 
 export const UnnamedReply = ReplyWith(Line(10, 160, /^[^{}<>]+$/));
 
+export const BanterReply = ReplyWith(Line(10, 300, /^[^{}<>]+$/));
+
 export class UnusableHeadline extends Schema.TaggedError<UnusableHeadline>()("UnusableHeadline", {
   text: Schema.String,
 }) {}
@@ -87,45 +91,63 @@ export class NoAiHeadline extends Schema.TaggedError<NoAiHeadline>()("NoAiHeadli
 }
 
 interface Brief {
-  readonly task: string;
-  readonly examples: Variants;
-  readonly button: string;
+  readonly prompt: string;
+  readonly request: string;
   readonly reply: typeof OpenedReply;
 }
 
-// The model only ever sees the placeholder, never a real name, so a nickname
-// can't steer what it writes.
-const briefFor = OfficeEvent.$match({
-  Opened: (): Brief => ({
-    task: `Someone just opened the office. Write a short, warm, playful headline that says so and invites others to join. Refer to the person only as ${NAME_PLACEHOLDER}, exactly once.`,
-    examples: openedHeadlines(NAME_PLACEHOLDER),
-    button: JOIN_LABEL,
-    reply: OpenedReply,
-  }),
-  Emptied: (): Brief => ({
-    task: "Everyone just left the office, so it's empty. Write a short, warm, playful headline that says so and invites people to jump back in. Don't name anyone.",
-    examples: emptiedHeadlines,
-    button: JUMP_IN_LABEL,
-    reply: UnnamedReply,
-  }),
-  Reminder: (): Brief => ({
-    task: "It's the weekday reminder. Write a short, funny headline inviting the team to come work alongside each other in the office. Don't name anyone.",
-    examples: reminderHeadlines,
-    button: JOIN_LABEL,
-    reply: UnnamedReply,
-  }),
-});
-
-const promptFor = (brief: Brief): string =>
-  [
+const announcement = (task: string, examples: Variants, button: string, reply: typeof OpenedReply): Brief => ({
+  prompt: [
     "You write one-line Slack announcements for a team's virtual office, a Discord voice channel where people work alongside each other.",
-    brief.task,
+    task,
     "Reply with exactly two lines and nothing else: no quotes, no labels, no explanation, no markdown.",
     "Line 1 is the headline. Start it with a single fitting emoji and keep it under 120 characters.",
-    `Line 2 is the label for the button that joins the office. Make it 2 to 4 words that play off the headline, start it with an emoji, and keep it under 30 characters. It used to always say "${brief.button}".`,
+    `Line 2 is the label for the button that joins the office. Make it 2 to 4 words that play off the headline, start it with an emoji, and keep it under 30 characters. It used to always say "${button}".`,
     "Here are some past headlines. Match their tone, but write something new:",
-    ...brief.examples,
-  ].join("\n");
+    ...examples,
+  ].join("\n"),
+  request: "Write today's headline.",
+  reply,
+});
+
+const BANTER_PROMPT = [
+  "You write short, playful Slack messages for a team's virtual office, a Discord voice channel where people work alongside each other.",
+  "You'll get a log of what happened in the office. Read all of it, pick the single most striking thing in it and write a message about it. It could be an early bird, a night owl, a marathon session, a mute and unmute frenzy, everyone turning their cameras on at once, a rare camera appearance, a crowd, a lone regular, two people who keep turning up together, or an office nobody visited.",
+  "In the log, Joined and Left are arriving and leaving, AlreadyThere means they were in when the log started, Muted and Unmuted are their own microphone, Deafened means they turned their sound off, ServerMuted means a moderator muted them, CameraOn is their camera and StreamStarted is sharing their screen.",
+  "Get the facts right: only say what the log shows, with the right people, days, times and counts. If the log is from last week, say last week.",
+  "Name people when it makes the message better, exactly as they're written in the log. Refer to people by name or as they, never as he or she.",
+  "Tease gently and keep it warm: never be mean, and never shame anyone for being away, leaving early or how much they work.",
+  "Reply with exactly two lines and nothing else: no quotes, no labels, no explanation, no markdown.",
+  "Line 1 is the message. Start it with a single fitting emoji and keep it to one or two sentences, under 250 characters.",
+  "Line 2 is the label for the button that joins the office. Make it 2 to 4 words that play off the message, start it with an emoji, and keep it under 30 characters.",
+  "Here are some example messages. Match their tone, but don't reuse their jokes:",
+  ...banterExamples,
+].join("\n");
+
+export const briefFor = OfficeEvent.$match({
+  Opened: (): Brief =>
+    announcement(
+      `Someone just opened the office. Write a short, warm, playful headline that says so and invites others to join. Refer to the person only as ${NAME_PLACEHOLDER}, exactly once.`,
+      openedHeadlines(NAME_PLACEHOLDER),
+      JOIN_LABEL,
+      OpenedReply,
+    ),
+  Emptied: (): Brief =>
+    announcement(
+      "Everyone just left the office, so it's empty. Write a short, warm, playful headline that says so and invites people to jump back in. Don't name anyone.",
+      emptiedHeadlines,
+      JUMP_IN_LABEL,
+      UnnamedReply,
+    ),
+  Reminder: (): Brief =>
+    announcement(
+      "It's the weekday reminder. Write a short, funny headline inviting the team to come work alongside each other in the office. Don't name anyone.",
+      reminderHeadlines,
+      JOIN_LABEL,
+      UnnamedReply,
+    ),
+  Banter: (context): Brief => ({ prompt: BANTER_PROMPT, request: banterLog(context), reply: BanterReply }),
+});
 
 // Free models often take 5-10 seconds, and sometimes over 30.
 const MODEL_TIMEOUT = "1 minute";
@@ -175,8 +197,8 @@ const writeWithModel = Effect.fnUntraced(function* (brief: Brief) {
 
   const response = yield* LanguageModel.generateText({
     prompt: [
-      { role: "system", content: promptFor(brief) },
-      { role: "user", content: "Write today's headline." },
+      { role: "system", content: brief.prompt },
+      { role: "user", content: brief.request },
     ],
   }).pipe(Effect.timeout(MODEL_TIMEOUT));
 
@@ -224,6 +246,27 @@ const withClient = Effect.fnUntraced(function* <C>(
   return yield* Effect.all(Array.map(models, (model) => model.captureRequirements)).pipe(Effect.provideContext(context));
 });
 
+export const openRouterProvider = (apiKey: Redacted.Redacted<string>, models: Array.NonEmptyReadonlyArray<string>) =>
+  withClient(
+    Array.map(models, (model) => OpenRouterLanguageModel.model(model, { temperature: 1 })),
+    OpenRouterClient.layer({ apiKey, siteTitle: "Virtual Office Notifier" }),
+  );
+
+export const cloudflareProvider = (
+  accountId: Redacted.Redacted<string>,
+  apiToken: Redacted.Redacted<string>,
+  models: Array.NonEmptyReadonlyArray<string>,
+) =>
+  withClient(
+    Array.map(models, (model) => OpenAiLanguageModel.model(model, CLOUDFLARE_MODEL_CONFIG)),
+    OpenAiClient.layer({
+      apiKey: apiToken,
+      apiUrl: `https://api.cloudflare.com/client/v4/accounts/${Redacted.value(accountId)}/ai/v1`,
+    }),
+  );
+
+type Providers = Array.NonEmptyReadonlyArray<Array.NonEmptyReadonlyArray<ModelLayer>>;
+
 export class HeadlineWriter extends Context.Service<
   HeadlineWriter,
   {
@@ -233,13 +276,17 @@ export class HeadlineWriter extends Context.Service<
 >()("virtual-office-notifier/HeadlineWriter") {
   // Either provider may go first, and its models are tried in turn until one
   // writes a usable headline.
-  static readonly layerProviders = (providers: Array.NonEmptyReadonlyArray<Array.NonEmptyReadonlyArray<ModelLayer>>) =>
+  static readonly layerProviders = (
+    providers: Providers,
+    banterProviders: Providers = providers,
+  ) =>
     Layer.succeed(
       HeadlineWriter,
       HeadlineWriter.of({
         write: Effect.fn("HeadlineWriter.write")(
           function* (event: OfficeEvent) {
-            const shuffled = (yield* Random.nextBoolean) ? providers : Array.reverse(providers);
+            const candidates = OfficeEvent.$is("Banter")(event) ? banterProviders : providers;
+            const shuffled = (yield* Random.nextBoolean) ? candidates : Array.reverse(candidates);
             const ordered = yield* Effect.all(Array.map(shuffled, orderModels));
             const plan = ExecutionPlan.make<Array.NonEmptyReadonlyArray<ModelStep>>(...Array.flatMap(ordered, providerSteps));
 
@@ -262,34 +309,29 @@ export class HeadlineWriter extends Context.Service<
     Effect.gen(function* () {
       const { openRouter, cloudflare } = yield* AiConfig;
 
-      const providers = yield* Effect.all([
-        ...Option.toArray(
-          Option.map(openRouter.apiKey, (apiKey) =>
-            withClient(
-              Array.map(openRouter.models, (model) => OpenRouterLanguageModel.model(model, { temperature: 1 })),
-              OpenRouterClient.layer({ apiKey, siteTitle: "Virtual Office Notifier" }),
-            ),
-          ),
-        ),
-        ...Option.toArray(
-          Option.map(Option.all({ accountId: cloudflare.accountId, apiToken: cloudflare.apiToken }), ({ accountId, apiToken }) =>
-            withClient(
-              Array.map(cloudflare.models, (model) => OpenAiLanguageModel.model(model, CLOUDFLARE_MODEL_CONFIG)),
-              OpenAiClient.layer({
-                apiKey: apiToken,
-                apiUrl: `https://api.cloudflare.com/client/v4/accounts/${Redacted.value(accountId)}/ai/v1`,
-              }),
-            ),
-          ),
-        ),
-      ]);
+      const cloudflareModels = Option.all({ accountId: cloudflare.accountId, apiToken: cloudflare.apiToken }).pipe(
+        Option.map(({ accountId, apiToken }) => cloudflareProvider(accountId, apiToken, cloudflare.models)),
+      );
+
+      const providersWith = (openRouterModels: Array.NonEmptyReadonlyArray<string>) =>
+        Effect.all([
+          ...Option.toArray(Option.map(openRouter.apiKey, (apiKey) => openRouterProvider(apiKey, openRouterModels))),
+          ...Option.toArray(cloudflareModels),
+        ]);
+
+      const providers = yield* providersWith(openRouter.models);
+      const banterProviders = yield* providersWith(openRouter.banterModels);
 
       return Array.match(providers, {
         onEmpty: () =>
           Layer.effectDiscard(Effect.logInfo("No AI provider configured, so using the fixed headlines")).pipe(
             Layer.provideMerge(HeadlineWriter.layerFixed),
           ),
-        onNonEmpty: HeadlineWriter.layerProviders,
+        onNonEmpty: (headlineProviders) =>
+          HeadlineWriter.layerProviders(
+            headlineProviders,
+            Array.isReadonlyArrayNonEmpty(banterProviders) ? banterProviders : headlineProviders,
+          ),
       });
     }),
   ).pipe(Layer.provide(NodeHttpClient.layerUndici));

@@ -55,9 +55,11 @@ describe("formatDuration", () => {
   });
 });
 
+const announce = (...args: Parameters<typeof formatMessage>) => Option.getOrThrow(formatMessage(...args));
+
 describe("formatMessage", () => {
   it("uses a generated headline and button for an opened office and credits the model", () => {
-    const message = formatMessage(
+    const message = announce(
       OfficeEvent.Opened(member),
       0,
       Option.some({ template: "🛋️ {name} saved you a seat!", button: "🪑 Grab a seat", model: "nvidia/nemotron:free" }),
@@ -76,7 +78,7 @@ describe("formatMessage", () => {
   });
 
   it("escapes the generated headline, the name and the model", () => {
-    const message = formatMessage(
+    const message = announce(
       OfficeEvent.Opened({ ...member, displayName: "<!channel> $&" }),
       0,
       Option.some({ template: "🍪 Cookies & {name}!", button: "🍪 Grab one", model: "<!here>" }),
@@ -87,7 +89,7 @@ describe("formatMessage", () => {
   });
 
   it("shows who opened the office with their avatar, a join button and the time", () => {
-    expect(formatMessage(OfficeEvent.Opened(member), 0)).toEqual({
+    expect(announce(OfficeEvent.Opened(member), 0)).toEqual({
       text: "🎙️ *Ada* opened the virtual office — everyone's welcome to join!",
       blocks: [
         {
@@ -112,13 +114,13 @@ describe("formatMessage", () => {
   });
 
   it("leaves the avatar out when Discord didn't send one", () => {
-    const [headline] = formatMessage(OfficeEvent.Opened({ ...member, avatarUrl: null }), 0).blocks;
+    const [headline] = announce(OfficeEvent.Opened({ ...member, avatarUrl: null }), 0).blocks;
 
     expect(headline).not.toHaveProperty("accessory");
   });
 
   it("recaps the session when the office empties", () => {
-    const message = formatMessage(
+    const message = announce(
       OfficeEvent.Emptied({
         ...member,
         recap: Option.some({ duration: Duration.minutes(134), visitors: 5 }),
@@ -141,7 +143,7 @@ describe("formatMessage", () => {
   });
 
   it("says person, not people, for a solo session", () => {
-    const message = formatMessage(
+    const message = announce(
       OfficeEvent.Emptied({ ...member, recap: Option.some({ duration: Duration.minutes(5), visitors: 1 }) }),
       0,
     );
@@ -150,13 +152,13 @@ describe("formatMessage", () => {
   });
 
   it("skips the recap when the session started before the bot did", () => {
-    const message = formatMessage(OfficeEvent.Emptied({ ...member, recap: Option.none() }), 0);
+    const message = announce(OfficeEvent.Emptied({ ...member, recap: Option.none() }), 0);
 
     expect(JSON.stringify(message.blocks)).not.toContain("Open for");
   });
 
   it("uses a generated headline and button for an emptied office and credits the model", () => {
-    const message = formatMessage(
+    const message = announce(
       OfficeEvent.Emptied({ ...member, recap: Option.none() }),
       0,
       Option.some({ template: "🌙 The office is quiet & waiting!", button: "🔦 Light it up", model: "nvidia/nemotron:free" }),
@@ -174,7 +176,7 @@ describe("formatMessage", () => {
   });
 
   it("uses a generated headline and button for the reminder and credits the model", () => {
-    const message = formatMessage(
+    const message = announce(
       OfficeEvent.Reminder(reminder),
       0,
       Option.some({
@@ -193,14 +195,14 @@ describe("formatMessage", () => {
   });
 
   it("links the reminder to the office", () => {
-    const message = formatMessage(OfficeEvent.Reminder(reminder), 0);
+    const message = announce(OfficeEvent.Reminder(reminder), 0);
 
     expect(JSON.stringify(message.blocks)).toContain(JOIN_URL);
   });
 
   it("rotates the reminder by date and ignores the variant", () => {
     const onDay = (day: number, variant = 0) =>
-      formatMessage(OfficeEvent.Reminder({ ...office, at: DateTime.add(monday, { days: day }) }), variant).text;
+      announce(OfficeEvent.Reminder({ ...office, at: DateTime.add(monday, { days: day }) }), variant).text;
 
     expect(onDay(0, 0)).toBe(onDay(0, 7));
     expect(onDay(0)).not.toBe(onDay(1));
@@ -213,7 +215,7 @@ describe("formatMessage", () => {
     const weekdays = Array.from({ length: count + 1 }, (_, n) => Math.floor(n / 5) * 7 + (n % 5));
 
     const texts = weekdays.map(
-      (day) => formatMessage(OfficeEvent.Reminder({ ...office, at: DateTime.add(monday, { days: day }) }), 0).text,
+      (day) => announce(OfficeEvent.Reminder({ ...office, at: DateTime.add(monday, { days: day }) }), 0).text,
     );
 
     expect(new Set(texts).size).toBe(count);
@@ -221,12 +223,12 @@ describe("formatMessage", () => {
   });
 
   it("copes with a negative variant", () => {
-    expect(formatMessage(OfficeEvent.Opened(member), -1).text).toBeTypeOf("string");
+    expect(announce(OfficeEvent.Opened(member), -1).text).toBeTypeOf("string");
   });
 
   it("escapes the display name in every phrasing", () => {
     for (const variant of [0, 1, 2]) {
-      const message = formatMessage(OfficeEvent.Opened({ ...member, displayName: "<!here>" }), variant);
+      const message = announce(OfficeEvent.Opened({ ...member, displayName: "<!here>" }), variant);
 
       expect(message.text).toContain("*&lt;!here&gt;*");
       expect(message.blocks[0]).toMatchObject({ text: { text: message.text } });
@@ -245,5 +247,57 @@ describe("weekdaysSinceEpoch", () => {
     expect(count("1970-01-04T09:15:00Z")).toBe(5);
     expect(count("1970-01-05T09:15:00Z")).toBe(5);
     expect(count("1970-01-06T09:15:00Z")).toBe(6);
+  });
+});
+
+describe("formatMessage for banter", () => {
+  const banter = OfficeEvent.Banter({
+    ...office,
+    at,
+    period: "Today",
+    activityOldestFirst: [],
+    olderEntriesLeftOut: 0,
+    present: [],
+  });
+
+  it("has nothing to post without a generated message", () => {
+    expect(formatMessage(banter, 0)).toEqual(Option.none());
+  });
+
+  it("posts the generated message, escaped, with a join button, the model's credit and a warning that it may be made up", () => {
+    const generated = Option.some({
+      template: "🦗 Nobody in the office today <!channel> & the chairs are bored.",
+      button: "🪑 Rescue the chairs",
+      model: "vendor/model:free",
+    });
+
+    const text = "🦗 Nobody in the office today &lt;!channel&gt; &amp; the chairs are bored.";
+
+    expect(formatMessage(banter, 0, generated)).toEqual(
+      Option.some({
+        text,
+        blocks: [
+          { type: "section", text: { type: "mrkdwn", text } },
+          {
+            type: "actions",
+            elements: [
+              {
+                type: "button",
+                text: { type: "plain_text", text: "🪑 Rescue the chairs", emoji: true },
+                url: JOIN_URL,
+                style: "primary",
+              },
+            ],
+          },
+          {
+            type: "context",
+            elements: [
+              { type: "mrkdwn", text: "✨ Banter by vendor/model:free" },
+              { type: "mrkdwn", text: "🤖 AI is a hallucination machine." },
+            ],
+          },
+        ],
+      }),
+    );
   });
 });

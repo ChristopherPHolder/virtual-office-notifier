@@ -1,10 +1,12 @@
 import { Effect, Layer, Option, Redacted, Stream } from "effect";
 
 import { ActivityRecorder } from "./ActivityRecorder.ts";
+import { banter } from "./Banter.ts";
 import { DiscordGateway } from "./DiscordGateway.ts";
 import { OfficeEvent } from "./OfficeEvent.ts";
 import { reminders } from "./Reminder.ts";
 import { isRetryable, type SlackError, SlackNotifier } from "./SlackNotifier.ts";
+import { StorageLayer } from "./Storage.ts";
 
 const logSlackError = (error: SlackError) =>
   (isRetryable(error.reason)
@@ -17,6 +19,7 @@ const eventAnnotations = OfficeEvent.$match({
   Opened: ({ userId }) => ({ event: "Opened", userId: Redacted.make(userId) }),
   Emptied: ({ userId }) => ({ event: "Emptied", userId: Redacted.make(userId) }),
   Reminder: () => ({ event: "Reminder" }),
+  Banter: ({ period }) => ({ event: "Banter", period }),
 });
 
 // Events are handled one at a time, so one that arrives during a retry waits
@@ -28,19 +31,27 @@ export const program = Effect.gen(function* () {
 
   yield* Effect.logInfo("Watching the virtual office");
 
-  // The reminders never end, so the program runs as long as the Discord events do.
-  const events = gateway.officeEvents.pipe(
-    Stream.merge(Option.match(gateway.office, { onNone: () => Stream.empty, onSome: reminders }), {
-      haltStrategy: "left",
-    }),
-  );
+  // The reminders and banter never end, so the program runs as long as the
+  // Discord events do.
+  const scheduled = Option.match(gateway.office, {
+    onNone: () => Stream.empty,
+    onSome: (office) => Stream.merge(reminders(office), banter(office)),
+  });
+
+  const events = gateway.officeEvents.pipe(Stream.merge(scheduled, { haltStrategy: "left" }));
 
   // Each event is its own trace, and a failed post is reported before it's
   // logged and skipped.
   const announce = Stream.runForEach(events, (event) =>
     slack.notify(event).pipe(
       Effect.withErrorReporting,
-      Effect.andThen(Effect.logInfo("Announced office event").pipe(Effect.annotateLogs({ outcome: "posted" }))),
+      Effect.flatMap((posted) =>
+        posted
+          ? Effect.logInfo("Announced office event").pipe(Effect.annotateLogs({ outcome: "posted" }))
+          : Effect.logInfo("Nothing to announce, no AI model wrote the banter").pipe(
+              Effect.annotateLogs({ outcome: "skipped" }),
+            ),
+      ),
       Effect.catchTag("SlackError", logSlackError),
       Effect.annotateLogs(eventAnnotations(event)),
       Effect.withSpan("Program.announce", { attributes: { event: event._tag } }),
@@ -58,5 +69,5 @@ export const program = Effect.gen(function* () {
 // fails startup.
 export const MainLayer = DiscordGateway.layer.pipe(
   Layer.provideMerge(SlackNotifier.layer),
-  Layer.merge(ActivityRecorder.layer),
+  Layer.merge(StorageLayer),
 );
