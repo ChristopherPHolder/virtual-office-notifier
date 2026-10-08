@@ -18,6 +18,7 @@ import {
 
 import { ActivityLog, ActivityLogError, Outage } from "./ActivityLog.ts";
 import { Database, DatabaseUnavailable, describeError, reconnectSchedule } from "./Database.ts";
+import type { TimedVoiceEffect } from "./VoiceEffect.ts";
 import type { VoiceObservation } from "./VoiceObservation.ts";
 
 // Many days of office traffic, and a few MB at most.
@@ -33,6 +34,7 @@ export const FLUSH_TIMEOUT = Duration.seconds(10);
 export type Entry = Data.TaggedEnum<{
   SessionStarted: { readonly sessionId: string; readonly at: DateTime.Utc };
   Observed: { readonly sessionId: string; readonly entryId: string; readonly observation: VoiceObservation };
+  EffectSent: { readonly sessionId: string; readonly entryId: string; readonly effect: TimedVoiceEffect };
   SessionStopped: { readonly sessionId: string; readonly at: DateTime.Utc };
 }>;
 
@@ -107,6 +109,7 @@ export class ActivityRecorder extends Context.Service<
     // Never fails or waits on the database: the observation is buffered and
     // written in the background.
     record(observation: VoiceObservation): Effect.Effect<void>;
+    recordEffect(effect: TimedVoiceEffect): Effect.Effect<void>;
   }
 >()("virtual-office-notifier/ActivityRecorder") {
   // One writer drains the buffer in order. An outage keeps the entry at the
@@ -133,6 +136,7 @@ export class ActivityRecorder extends Context.Service<
       const persist = Entry.$match({
         SessionStarted: ({ sessionId, at }) => log.startSession(sessionId, at),
         Observed: ({ sessionId, entryId, observation }) => log.record(sessionId, entryId, observation),
+        EffectSent: ({ sessionId, entryId, effect }) => log.recordEffect(sessionId, entryId, effect),
         SessionStopped: ({ sessionId, at }) => log.stopSession(sessionId, at),
       });
 
@@ -208,9 +212,13 @@ export class ActivityRecorder extends Context.Service<
 
       return ActivityRecorder.of({
         record: (observation) => enqueue(Entry.Observed({ sessionId, entryId: crypto.randomUUID(), observation })),
+        recordEffect: (effect) => enqueue(Entry.EffectSent({ sessionId, entryId: crypto.randomUUID(), effect })),
       });
     }),
   );
 
-  static readonly layerDisabled = Layer.succeed(ActivityRecorder, ActivityRecorder.of({ record: () => Effect.void }));
+  static readonly layerDisabled = Layer.succeed(
+    ActivityRecorder,
+    ActivityRecorder.of({ record: () => Effect.void, recordEffect: () => Effect.void }),
+  );
 }

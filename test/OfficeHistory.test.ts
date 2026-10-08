@@ -7,6 +7,7 @@ import { ActivityLog } from "../src/ActivityLog.ts";
 import { columnNaming, Database } from "../src/Database.ts";
 import { NO_VOICE_DETAILS, type VoiceDetails } from "../src/OfficeEvent.ts";
 import { MAX_ACTIVITY_ENTRIES, OfficeHistory } from "../src/OfficeHistory.ts";
+import type { TimedVoiceEffect } from "../src/VoiceEffect.ts";
 import type { VoiceObservation } from "../src/VoiceObservation.ts";
 
 const OFFICE = "office";
@@ -65,6 +66,30 @@ const record = Effect.fnUntraced(function* (session: string, ...observations: Re
   yield* Effect.forEach(observations, (seen) => log.record(session, crypto.randomUUID(), seen), { discard: true });
 });
 
+const effect = (minute: number, overrides: Partial<TimedVoiceEffect> = {}): TimedVoiceEffect => ({
+  userId: "u1",
+  displayName: "Ada",
+  isBot: false,
+  guildId: "g1",
+  channelId: OFFICE,
+  soundId: null,
+  soundName: null,
+  soundVolume: null,
+  emojiId: null,
+  emojiName: null,
+  emojiAnimated: null,
+  animationType: null,
+  animationId: null,
+  at: minutes(minute),
+  ...overrides,
+});
+
+const recordEffects = Effect.fnUntraced(function* (session: string, ...effects: ReadonlyArray<TimedVoiceEffect>) {
+  const log = yield* ActivityLog;
+
+  yield* Effect.forEach(effects, (sent) => log.recordEffect(session, crypto.randomUUID(), sent), { discard: true });
+});
+
 const startSessions = Effect.gen(function* () {
   const database = yield* Database;
   const log = yield* ActivityLog;
@@ -100,6 +125,46 @@ describe("OfficeHistory", () => {
         ],
         olderEntriesLeftOut: 0,
       });
+    }).pipe(Effect.provide(TestLayer)));
+
+  it.effect("reads soundboard sounds and emoji reactions alongside the voice activity", () =>
+    Effect.gen(function* () {
+      yield* startSessions;
+      yield* record(SESSION, joins(101, "u1", "Ada"));
+      yield* recordEffects(
+        SESSION,
+        effect(102, { soundId: "1", soundName: "airhorn", soundVolume: 0.5, emojiName: "📯" }),
+        effect(103, { emojiName: "🎉" }),
+        effect(104, { soundId: "1234567890", emojiId: "42", emojiName: "partyparrot" }),
+        effect(105, { animationType: 0, animationId: 3 }),
+      );
+
+      const history = yield* OfficeHistory;
+      const activity = yield* history.latestActivityBetween(minutes(100), minutes(110));
+
+      assert.deepStrictEqual(activity.entriesOldestFirst, [
+        { at: minutes(101), who: "Ada", event: "Joined" },
+        { at: minutes(102), who: "Ada", event: "PlayedSound airhorn" },
+        { at: minutes(103), who: "Ada", event: "Reacted 🎉" },
+        { at: minutes(104), who: "Ada", event: "PlayedSound" },
+        { at: minutes(105), who: "Ada", event: "SentEffect" },
+      ]);
+    }).pipe(Effect.provide(TestLayer)));
+
+  it.effect("stores each effect once, even when the write is repeated", () =>
+    Effect.gen(function* () {
+      yield* startSessions;
+
+      const log = yield* ActivityLog;
+      const sent = effect(102, { soundId: "1", soundName: "airhorn" });
+
+      yield* log.recordEffect(SESSION, "3d1f6c1e-6c1a-4c55-9a0e-8e3b8f9b2a10", sent);
+      yield* log.recordEffect(SESSION, "3d1f6c1e-6c1a-4c55-9a0e-8e3b8f9b2a10", sent);
+
+      const sql = yield* SqlClient.SqlClient;
+      const [row] = yield* sql<{ readonly effects: number }>`SELECT count(*)::int AS effects FROM office.voice_effects`;
+
+      assert.strictEqual(row?.effects, 1);
     }).pipe(Effect.provide(TestLayer)));
 
   it.effect(`keeps the latest ${MAX_ACTIVITY_ENTRIES} entries of a busy period and counts the rest`, () =>

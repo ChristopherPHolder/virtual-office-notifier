@@ -9,6 +9,7 @@ import { ActivityRecorder, BUFFER_SIZE } from "../src/ActivityRecorder.ts";
 import { columnNaming, Database } from "../src/Database.ts";
 import { NO_VOICE_DETAILS } from "../src/OfficeEvent.ts";
 import { StorageLayer } from "../src/Storage.ts";
+import type { TimedVoiceEffect } from "../src/VoiceEffect.ts";
 import type { VoiceObservation } from "../src/VoiceObservation.ts";
 import { captureReports, withEnv } from "./fakes.ts";
 
@@ -24,6 +25,23 @@ const observation = (userId: string): VoiceObservation => ({
   newChannelId: "office",
   oldDetails: NO_VOICE_DETAILS,
   newDetails: NO_VOICE_DETAILS,
+  at: DateTime.makeUnsafe(0),
+});
+
+const effect = (userId: string): TimedVoiceEffect => ({
+  userId,
+  displayName: userId,
+  isBot: false,
+  guildId: "g1",
+  channelId: "office",
+  soundId: "1",
+  soundName: "quack",
+  soundVolume: 1,
+  emojiId: null,
+  emojiName: "🦆",
+  emojiAnimated: false,
+  animationType: null,
+  animationId: null,
   at: DateTime.makeUnsafe(0),
 });
 
@@ -61,6 +79,7 @@ const makeFakeLog = Effect.fnUntraced(function* (
     startSession: () => call("start"),
     stopSession: () => call("stop"),
     record: (_session, _entry, { userId }) => call(`record ${userId}`),
+    recordEffect: (_session, _entry, { userId }) => call(`effect ${userId}`),
     reject: (payload) => call(payload.includes(`"userId":"u1"`) ? "reject u1" : "reject"),
   });
 
@@ -109,16 +128,17 @@ const startRecorder = Effect.fnUntraced(function* (
 });
 
 describe("ActivityRecorder", () => {
-  it.effect("writes the session start, each observation and the session stop, in order", () =>
+  it.effect("writes the session start, each observation and effect and the session stop, in order", () =>
     Effect.gen(function* () {
       const fake = yield* makeFakeLog();
       const { recorder, stop } = yield* startRecorder(fake.log);
 
       yield* recorder.record(observation("u1"));
+      yield* recorder.recordEffect(effect("u1"));
       yield* recorder.record(observation("u2"));
       yield* stop;
 
-      assert.deepStrictEqual(yield* fake.allCalls, ["start", "record u1", "record u2", "stop"]);
+      assert.deepStrictEqual(yield* fake.allCalls, ["start", "record u1", "effect u1", "record u2", "stop"]);
     }));
 
   it.effect("buffers until the database is ready", () =>
@@ -306,16 +326,18 @@ describe("StorageLayer", () => {
 
       yield* recorder.record(observation("u1"));
       yield* recorder.record(observation("u2"));
+      yield* recorder.recordEffect(effect("u3"));
       yield* Scope.close(scope, Exit.void);
 
       const sql = yield* SqlClient.SqlClient;
 
-      const [counts] = yield* sql<{ readonly snapshots: number; readonly stopped: number }>`
+      const [counts] = yield* sql<{ readonly snapshots: number; readonly effects: number; readonly stopped: number }>`
         SELECT
           (SELECT count(*)::int FROM office.voice_snapshots) AS snapshots,
+          (SELECT count(*)::int FROM office.voice_effects) AS effects,
           (SELECT count(*)::int FROM office.bot_sessions WHERE stopped_at IS NOT NULL) AS stopped
       `;
 
-      assert.deepStrictEqual(counts, { snapshots: 2, stopped: 1 });
+      assert.deepStrictEqual(counts, { snapshots: 2, effects: 1, stopped: 1 });
     }).pipe(Effect.provide(PgliteClient.layer(columnNaming))));
 });

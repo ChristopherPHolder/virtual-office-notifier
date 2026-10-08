@@ -11,6 +11,7 @@ import { ActivityRecorder } from "../src/ActivityRecorder.ts";
 import { HeadlineWriter } from "../src/HeadlineWriter.ts";
 import { SlackNotifier } from "../src/SlackNotifier.ts";
 import { OfficeEvent } from "../src/OfficeEvent.ts";
+import type { TimedVoiceEffect } from "../src/VoiceEffect.ts";
 import type { VoiceObservation } from "../src/VoiceObservation.ts";
 
 export const WEBHOOK_URL = "https://hooks.slack.com/services/TEST/WEBHOOK/secret";
@@ -88,13 +89,17 @@ export const makeFakeSlack = Effect.fnUntraced(function* (
 // Collects what the program would record, without a database.
 export const makeFakeRecorder = Effect.fnUntraced(function* () {
   const recorded = yield* Ref.make<ReadonlyArray<VoiceObservation>>([]);
+  const effects = yield* Ref.make<ReadonlyArray<TimedVoiceEffect>>([]);
 
   const layer = Layer.succeed(
     ActivityRecorder,
-    ActivityRecorder.of({ record: (observation) => Ref.update(recorded, (all) => [...all, observation]) }),
+    ActivityRecorder.of({
+      record: (observation) => Ref.update(recorded, (all) => [...all, observation]),
+      recordEffect: (effect) => Ref.update(effects, (all) => [...all, effect]),
+    }),
   );
 
-  return { layer, recorded: Ref.get(recorded) };
+  return { layer, recorded: Ref.get(recorded), recordedEffects: Ref.get(effects) };
 });
 
 export const withEnv = (env: Record<string, string>) =>

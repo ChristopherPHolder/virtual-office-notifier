@@ -61,10 +61,14 @@ export class OfficeHistory extends Context.Service<
       ) {
         const newestFirst = yield* onceReady(
           sql`
-            SELECT observed_at, coalesce(real_name, display_name) AS who, event, count(*) OVER ()::int AS total
-            FROM office.voice_activity
+            SELECT
+              observed_at,
+              coalesce(real_name, display_name) AS who,
+              concat_ws(' ', event, detail) AS event,
+              count(*) OVER ()::int AS total
+            FROM office.office_activity
             WHERE observed_at >= ${DateTime.toDate(from)} AND observed_at < ${DateTime.toDate(until)}
-            ORDER BY observed_at DESC, snapshot_id DESC
+            ORDER BY observed_at DESC, snapshot_id DESC NULLS LAST, effect_id DESC NULLS LAST
             LIMIT ${MAX_ACTIVITY_ENTRIES}
           `.pipe(Effect.flatMap(decodeActivityRows)),
         );

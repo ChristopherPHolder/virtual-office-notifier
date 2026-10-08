@@ -66,7 +66,7 @@ const runWithSentry = Effect.fnUntraced(function* (replies: ReadonlyArray<Reply>
     yield* Queue.end(queue);
 
     const fiber = yield* program.pipe(
-      Effect.provide(Layer.mergeAll(DiscordGateway.layerTest(queue), slack.layer, ActivityRecorder.layerDisabled, OfficeHistory.layerDisabled)),
+      Effect.provide(Layer.mergeAll(DiscordGateway.layerTest({ updates: queue }), slack.layer, ActivityRecorder.layerDisabled, OfficeHistory.layerDisabled)),
       Effect.forkChild,
     );
 
