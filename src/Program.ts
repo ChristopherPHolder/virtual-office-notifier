@@ -61,7 +61,11 @@ export const program = Effect.gen(function* () {
   // Its own fiber, so a slow Slack post never holds up recording.
   const record = Stream.runForEach(gateway.voiceObservations, recorder.record);
 
-  yield* Effect.all([announce, record], { concurrency: "unbounded", discard: true });
+  const recordEffects = Stream.runForEach(gateway.voiceEffects, recorder.recordEffect);
+
+  const followOccupancy = Stream.runForEach(gateway.botPresence, gateway.moveBot);
+
+  yield* Effect.all([announce, record, recordEffects, followOccupancy], { concurrency: "unbounded", discard: true });
 });
 
 // Slack is built first, so a missing webhook URL fails before logging in to

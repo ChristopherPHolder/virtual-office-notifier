@@ -13,9 +13,9 @@ const happenedOn = (day: string, lines: string): ReadonlyArray<ActivityEntry> =>
     .trim()
     .split("\n")
     .map((line) => {
-      const [time = "", who = "", event = ""] = line.trim().split(/\s+/);
+      const [time = "", who = "", ...event] = line.trim().split(/\s+/);
 
-      return { at: officeTime(day, time), who, event };
+      return { at: officeTime(day, time), who, event: event.join(" ") };
     });
 
 const MON = "2026-09-28";
@@ -124,6 +124,9 @@ export const banterScenarios: ReadonlyArray<BanterScenario> = [
       15:00 Alan CameraOn
       15:01 Grace CameraOn
       15:01 Linus CameraOn
+      15:03 Alan PlayedSound airhorn
+      15:03 Grace Reacted 😂
+      15:04 Alan PlayedSound airhorn
       15:20 Linus Deafened
       15:20 Linus Muted
       15:24 Linus Undeafened

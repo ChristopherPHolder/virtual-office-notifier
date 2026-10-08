@@ -49,6 +49,38 @@ const voiceActivityView = `
   WHERE e.event IS NOT NULL
 `;
 
+const officeActivityView = `
+  CREATE VIEW office.office_activity AS
+  SELECT
+    observed_at,
+    bot_session_id,
+    user_id,
+    display_name,
+    real_name,
+    event,
+    NULL::text AS detail,
+    snapshot_id,
+    NULL::bigint AS effect_id
+  FROM office.voice_activity
+  UNION ALL
+  SELECT
+    e.observed_at,
+    e.bot_session_id,
+    e.user_id,
+    m.display_name,
+    m.real_name,
+    CASE
+      WHEN e.sound_id IS NOT NULL THEN 'PlayedSound'
+      WHEN e.emoji_id IS NOT NULL OR e.emoji_name IS NOT NULL THEN 'Reacted'
+      ELSE 'SentEffect'
+    END,
+    CASE WHEN e.sound_id IS NOT NULL THEN e.sound_name ELSE e.emoji_name END,
+    NULL::bigint,
+    e.id
+  FROM office.voice_effects e
+  JOIN office.members m USING (user_id)
+`;
+
 // Keyed `<id>_<name>` and run once each, in id order, inside the `office`
 // schema. They only ever add: nothing stored is ever deleted. Inlined rather
 // than read from disk, because the VM only gets the bundled main.js.
@@ -143,5 +175,34 @@ export const migrations = Migrator.fromRecord({
     `;
 
     yield* sql`CREATE INDEX banter_posts_posted_at ON office.banter_posts (posted_at)`;
+  }),
+
+  "0003_record_voice_effects": Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient;
+
+    yield* sql`
+      CREATE TABLE office.voice_effects (
+        id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+        entry_id uuid NOT NULL UNIQUE,
+        bot_session_id uuid NOT NULL REFERENCES office.bot_sessions (id),
+        observed_at timestamptz NOT NULL,
+        guild_id text NOT NULL,
+        channel_id text NOT NULL,
+        user_id text NOT NULL REFERENCES office.members (user_id),
+        sound_id text,
+        sound_name text,
+        sound_volume double precision,
+        emoji_id text,
+        emoji_name text,
+        emoji_animated boolean,
+        animation_type integer,
+        animation_id integer
+      )
+    `;
+
+    yield* sql`CREATE INDEX voice_effects_observed_at ON office.voice_effects (observed_at)`;
+    yield* sql`CREATE INDEX voice_effects_user_id_observed_at ON office.voice_effects (user_id, observed_at)`;
+
+    yield* sql.unsafe(officeActivityView);
   }),
 });

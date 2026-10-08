@@ -2,10 +2,12 @@ import { assert, describe, it } from "@effect/vitest";
 import { type Cause, Effect, Fiber, Layer, Logger, type LogLevel, Queue, References } from "effect";
 import { TestClock } from "effect/testing";
 
+import type { BotPresence } from "../src/BotPresence.ts";
 import { DiscordGateway } from "../src/DiscordGateway.ts";
 import { OfficeHistory } from "../src/OfficeHistory.ts";
 import { MainLayer, program } from "../src/Program.ts";
 import { NO_VOICE_DETAILS, type VoiceStateUpdate } from "../src/OfficeEvent.ts";
+import type { VoiceEffect } from "../src/VoiceEffect.ts";
 import { firstVariant, hang, makeFakeRecorder, makeFakeSlack, ok, type Reply, respond, WEBHOOK_URL, withEnv } from "./fakes.ts";
 
 const OFFICE = "office";
@@ -31,6 +33,23 @@ const update = (overrides: Partial<VoiceStateUpdate> = {}): VoiceStateUpdate => 
   ...overrides,
 });
 
+const effect = (overrides: Partial<VoiceEffect> = {}): VoiceEffect => ({
+  userId: "u1",
+  displayName: "Ada",
+  isBot: false,
+  guildId: GUILD,
+  channelId: OFFICE,
+  soundId: "1",
+  soundName: "quack",
+  soundVolume: 1,
+  emojiId: null,
+  emojiName: "🦆",
+  emojiAnimated: false,
+  animationType: null,
+  animationId: null,
+  ...overrides,
+});
+
 interface LogEntry {
   readonly level: LogLevel.LogLevel;
   readonly message: string;
@@ -39,13 +58,15 @@ interface LogEntry {
 
 // Runs the program over the given voice state updates until the queue ends,
 // starting with `present` already in the office, and returns what was posted
-// to Slack, what was recorded and what was logged.
+// to Slack, what was recorded, where the bot moved and what was logged.
 const runProgram = Effect.fnUntraced(function* (
   updates: ReadonlyArray<VoiceStateUpdate>,
   replies: ReadonlyArray<Reply> = [ok],
   present: ReadonlyArray<VoiceStateUpdate> = [],
+  effects: ReadonlyArray<VoiceEffect> = [],
 ) {
   const queue = yield* Queue.unbounded<VoiceStateUpdate, Cause.Done>();
+  const moves = yield* Queue.unbounded<BotPresence>();
 
   yield* Queue.offerAll(queue, updates);
   yield* Queue.end(queue);
@@ -70,7 +91,14 @@ const runProgram = Effect.fnUntraced(function* (
   yield* program.pipe(
     Effect.provide(
       Layer.mergeAll(
-        DiscordGateway.layerTest(queue, new Set(present.map((update) => update.userId)), GUILD, present),
+        DiscordGateway.layerTest({
+          updates: queue,
+          occupants: new Set(present.map((update) => update.userId)),
+          guildId: GUILD,
+          present,
+          effects,
+          moves,
+        }),
         slack.layer,
         recorder.layer,
         OfficeHistory.layerDisabled,
@@ -81,7 +109,14 @@ const runProgram = Effect.fnUntraced(function* (
     firstVariant,
   );
 
-  return { posted: yield* slack.postedTexts, bodies: yield* slack.postedBodies, recorded: yield* recorder.recorded, logs };
+  return {
+    posted: yield* slack.postedTexts,
+    bodies: yield* slack.postedBodies,
+    recorded: yield* recorder.recorded,
+    recordedEffects: yield* recorder.recordedEffects,
+    moves: yield* Queue.clear(moves),
+    logs,
+  };
 });
 
 const OPENED = "🎙️ *Ada* opened the virtual office — everyone's welcome to join!";
@@ -226,6 +261,24 @@ describe("recording", () => {
       );
     }));
 
+  it.effect("records soundboard sounds and emoji reactions in the office, leaving out bots and other channels", () =>
+    Effect.gen(function* () {
+      const { recordedEffects } = yield* runProgram([], [ok], [], [
+        effect(),
+        effect({ userId: "u2", soundId: null, soundName: null, soundVolume: null, emojiName: "🎉" }),
+        effect({ channelId: "lobby" }),
+        effect({ userId: "bot", isBot: true }),
+      ]);
+
+      assert.deepStrictEqual(
+        recordedEffects.map(({ userId, soundName, emojiName }) => ({ userId, soundName, emojiName })),
+        [
+          { userId: "u1", soundName: "quack", emojiName: "🦆" },
+          { userId: "u2", soundName: null, emojiName: "🎉" },
+        ],
+      );
+    }));
+
   it.effect("keeps recording while a Slack post is being retried", () =>
     Effect.gen(function* () {
       const queue = yield* Queue.unbounded<VoiceStateUpdate, Cause.Done>();
@@ -233,7 +286,7 @@ describe("recording", () => {
       const recorder = yield* makeFakeRecorder();
 
       const fiber = yield* program.pipe(
-        Effect.provide(Layer.mergeAll(DiscordGateway.layerTest(queue), slack.layer, recorder.layer, OfficeHistory.layerDisabled)),
+        Effect.provide(Layer.mergeAll(DiscordGateway.layerTest({ updates: queue }), slack.layer, recorder.layer, OfficeHistory.layerDisabled)),
         withEnv(env),
         firstVariant,
         Effect.forkChild,
@@ -250,6 +303,29 @@ describe("recording", () => {
     }));
 });
 
+describe("bot presence", () => {
+  it.effect("stays out of an empty office, joins when it opens and leaves when it empties", () =>
+    Effect.gen(function* () {
+      const { moves } = yield* runProgram([
+        update(),
+        update({ userId: "u2" }),
+        leave(),
+        update({ userId: "bot", isBot: true }),
+        leave({ userId: "u2" }),
+        update(),
+      ]);
+
+      assert.deepStrictEqual(moves, ["Away", "InOffice", "Away", "InOffice"]);
+    }));
+
+  it.effect("joins straight away when people are already in the office at startup", () =>
+    Effect.gen(function* () {
+      const { moves } = yield* runProgram([leave()], [ok], [update()]);
+
+      assert.deepStrictEqual(moves, ["InOffice", "Away"]);
+    }));
+});
+
 describe("daily reminder", () => {
   it.effect("posts the reminder to Slack while watching the office", () =>
     Effect.gen(function* () {
@@ -258,7 +334,7 @@ describe("daily reminder", () => {
       const recorder = yield* makeFakeRecorder();
 
       const fiber = yield* program.pipe(
-        Effect.provide(Layer.mergeAll(DiscordGateway.layerTest(queue), slack.layer, recorder.layer, OfficeHistory.layerDisabled)),
+        Effect.provide(Layer.mergeAll(DiscordGateway.layerTest({ updates: queue }), slack.layer, recorder.layer, OfficeHistory.layerDisabled)),
         withEnv(env),
         firstVariant,
         Effect.forkChild,

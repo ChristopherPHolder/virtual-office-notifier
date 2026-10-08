@@ -28,7 +28,7 @@ Posts to Slack when someone opens our Discord "virtual office" voice channel, an
 - **AI-written headlines** from free models on OpenRouter or Cloudflare Workers AI, falling back to fixed phrasings.
 - **Restart-safe.** It counts whoever is already in the channel at startup, so a restart mid-session doesn't announce the office opening again.
 - **Keeps going when Slack doesn't.** Failed posts are retried with backoff and logged, and never crash the process.
-- **Records voice activity** in the office channel to a [database](#database): joins, leaves, mute, deafen, camera and streaming, exactly as Discord reports them. The database can never stop the announcements.
+- **Records voice activity** in the office channel to a [database](#database): joins, leaves, mute, deafen, camera and streaming, exactly as Discord reports them, plus soundboard sounds and emoji reactions. The database can never stop the announcements.
 - **Optional Sentry monitoring** of errors, traces and logs.
 
 ## What it posts
@@ -72,7 +72,7 @@ Banter is always written by an AI model, from what's actually happened in the of
 | Reminder | Weekdays at 11:15 UTC+2. It's a fixed offset, so it doesn't shift with daylight saving. Skipped if the office channel wasn't found at startup, since there's nothing to link to. |
 | Banter | At random, between 1 and 2½ hours apart, from 09:00 to 18:00 UTC+2 on weekdays, and at most 5 a day. See [Banter](#banter). |
 
-It only watches the one office channel and ignores bots. Mute, deafen and video changes aren't announced, only [recorded](#database).
+It only watches the one office channel and ignores bots. Mute, deafen and video changes, soundboard sounds and emoji reactions aren't announced, only [recorded](#database).
 
 The fixed opened and emptied headlines are picked at random from a few phrasings. The reminder rotates through its phrasings by date, so each one comes up once before any repeats.
 
@@ -92,7 +92,8 @@ flowchart LR
   Notifier <-->|headline + label| Writer[HeadlineWriter]
   Writer <-.->|optional| AI[OpenRouter / Workers AI]
   Notifier -->|Block Kit card| Slack[Slack webhook]
-  Gateway -->|voice observations| Recorder[ActivityRecorder]
+  Gateway -->|voice observations and effects| Recorder[ActivityRecorder]
+  Program -->|join / leave the office| Gateway
   Recorder -->|in order, in the background| Log[ActivityLog]
   Log --> Postgres[(Supabase Postgres)]
 ```
@@ -100,6 +101,8 @@ flowchart LR
 Events are handled one at a time, so one that arrives while a Slack post is being retried waits its turn and messages stay in order. Each post times out after 10 seconds and is retried up to 4 times with jittered exponential backoff from 1 second, or after Slack's `Retry-After` when rate-limited. A revoked webhook (403, 404 or 410) or a rejected payload isn't retried. Either way the failure is logged and the next event is handled as normal.
 
 Recording runs alongside, in its own fiber, so a slow Slack post never holds it up. See [Database](#database) for how it handles the database being down.
+
+Discord only sends soundboard sounds and emoji reactions (`voiceChannelEffectSend`) to clients in the voice channel. So while anyone is in the office, the bot is too: it joins when the office opens and leaves when it empties, already muted and deafened. It only sends the gateway's voice-state message and never opens an audio connection, so it can't hear or send anything. It also leaves an empty office at startup, in case an earlier run left it behind. If Discord disconnects it mid-session, it's back the next time the office opens.
 
 | Module | Responsibility |
 |---|---|
@@ -115,10 +118,12 @@ Recording runs alongside, in its own fiber, so a slow Slack post never holds it 
 | [`src/SlackMessage.ts`](src/SlackMessage.ts) | Builds the Block Kit message, including the fixed phrasings. |
 | [`src/SlackNotifier.ts`](src/SlackNotifier.ts) | Posts to the webhook, with retries and error classification. |
 | [`src/VoiceObservation.ts`](src/VoiceObservation.ts) | Decides which voice-state updates are worth recording. |
+| [`src/VoiceEffect.ts`](src/VoiceEffect.ts) | Soundboard sounds and emoji reactions, and which ones are worth recording. |
+| [`src/BotPresence.ts`](src/BotPresence.ts) | Whether the bot should be in the office, from who's there at startup and the office opening and emptying. |
 | [`src/ActivityRecorder.ts`](src/ActivityRecorder.ts) | Buffers observations and writes them in order, retrying outages and setting aside rows the database rejects. |
-| [`src/ActivityLog.ts`](src/ActivityLog.ts) | The repository: the SQL that writes sessions, members and snapshots, and tells outages from bad rows. |
+| [`src/ActivityLog.ts`](src/ActivityLog.ts) | The repository: the SQL that writes sessions, members, snapshots and effects, and tells outages from bad rows. |
 | [`src/Database.ts`](src/Database.ts) | Connects to Postgres and runs the migrations in the background, retrying until it works. |
-| [`src/migrations.ts`](src/migrations.ts) | The tables and the `voice_activity` view, bundled into the app. |
+| [`src/migrations.ts`](src/migrations.ts) | The tables and the `voice_activity` and `office_activity` views, bundled into the app. |
 | [`src/SupabaseCa.ts`](src/SupabaseCa.ts) | Supabase's root certificate, which Node doesn't trust by default. |
 | [`src/Config.ts`](src/Config.ts) | Environment variables and the default model lists. |
 | [`src/Observability.ts`](src/Observability.ts) | Sends errors, traces and logs to Sentry when it's configured. |
@@ -167,8 +172,8 @@ The process exits at startup with an error naming the variable if a required one
 ### Discord bot
 
 1. Create an application at <https://discord.com/developers/applications> and add a bot. Revealing the token requires the account password.
-2. Under **Bot**, turn off **Public Bot**. No privileged intents are needed; the bot only uses `Guilds` and `GuildVoiceStates`.
-3. Under **OAuth2 → URL Generator**, pick the `bot` scope with the **View Channels** permission, open the URL and add the bot to the server.
+2. Under **Bot**, turn off **Public Bot**. No privileged intents are needed; the bot only uses `Guilds`, `GuildVoiceStates` and `GuildExpressions` (to keep the server's soundboard sound names up to date).
+3. Under **OAuth2 → URL Generator**, pick the `bot` scope with the **View Channels** and **Connect** permissions, open the URL and add the bot to the server. Without **Connect** it can't join the office, so soundboard sounds and emoji reactions aren't recorded, and it logs a warning at startup saying so.
 
 ### Slack webhook
 
@@ -222,7 +227,7 @@ Needs the [database](#database) and at least one [AI provider](#ai-headlines). W
 **What the model sees and returns**
 
 - It picks one stretch of time at random: today so far, yesterday and today, this week so far (from Monday), or last week.
-- The model gets the time, who's in the office right now, and every entry of the [`voice_activity`](#whats-recorded) view in that stretch, as is, with times in UTC+2: `Wed 30 Sep 15:00 Barbara CameraOn`. A busy stretch is cut to its latest 400 entries, and the model is told how many were left out.
+- The model gets the time, who's in the office right now, and every entry of the [`office_activity`](#whats-recorded) view in that stretch, as is, with times in UTC+2: `Wed 30 Sep 15:00 Barbara CameraOn` or `Wed 30 Sep 15:03 Alan PlayedSound airhorn`. A busy stretch is cut to its latest 400 entries, and the model is told how many were left out.
 - People are named with their `real_name` when it's filled in, or their Discord display name. Who's in right now comes from what this run of the bot recorded.
 - The prompt asks for something playful and warm, never mean, that only says what the log shows. The reply must be exactly two lines: a message of up to 300 characters and a button label of up to 30, with no Slack link syntax. The reply is escaped before it's posted.
 - Nothing checks that what the model says is true, and it does get things wrong, so every bit of banter says it's AI-written and may be made up.
@@ -263,6 +268,7 @@ Everything lives in an `office` schema, out of the `public` schema that Supabase
 | Table | What's in it |
 |---|---|
 | `voice_snapshots` | One row per Discord voice-state update touching the office: joining, leaving, moving in or out, and every change inside. It has the old and new value of every field Discord sends (channel, self and server mute and deafen, camera, streaming, suppressed, request to speak and voice session), as Discord sent them. Bots are left out. `source` is `update`, or `startup` for someone already in the office when the bot started. |
+| `voice_effects` | One row per soundboard sound or emoji reaction someone sent in the office, as Discord sent it: the sound's ID, volume and name (looked up from the server's sounds and Discord's default ones, empty when it couldn't be found), the emoji, and the animation. Bots are left out. |
 | `members` | One row per Discord user seen, with their latest display name and when they were first and last seen. `real_name` is yours to fill in by hand; the bot never writes it. |
 | `bot_sessions` | One row per run of the bot, with when it started and stopped. `stopped_at` stays empty when it didn't stop cleanly, so gaps in the data can be told apart from an empty office. |
 | `rejected_updates` | Anything the database refused to store, as JSON with the error, so it can be fixed and replayed by hand. |
@@ -270,9 +276,11 @@ Everything lives in an `office` schema, out of the `public` schema that Supabase
 
 The `voice_activity` view turns the snapshots into readable events with names: `AlreadyThere`, `Joined`, `Left`, `Muted`/`Unmuted`, `Deafened`/`Undeafened`, `ServerMuted`/`ServerUnmuted`, `ServerDeafened`/`ServerUndeafened`, `CameraOn`/`CameraOff` and `StreamStarted`/`StreamStopped`. Anything already on when someone arrives counts as switched on, so joining muted is `Joined` and `Muted`. Deafening in Discord also mutes, so it shows as `Deafened` and `Muted`.
 
+The `office_activity` view is `voice_activity` plus the effects: `PlayedSound` with the sound's name in `detail`, `Reacted` with the emoji, or `SentEffect` for anything else. It's what [banter](#banter) reads.
+
 ```sql
-SELECT observed_at, coalesce(real_name, display_name) AS who, event
-FROM office.voice_activity
+SELECT observed_at, coalesce(real_name, display_name) AS who, event, detail
+FROM office.office_activity
 ORDER BY observed_at DESC
 LIMIT 50;
 ```
@@ -426,7 +434,9 @@ For headlines, the AI providers only get the instructions and a few example head
 
 [Banter](#banter) is different: the model gets the recorded office activity for up to a week, with everyone's name, and can name people in what it writes. The defaults are free models, and providers of free models may keep and train on what they're sent. Tell the team before turning it on.
 
-The [database](#database) keeps a detailed record of each person's activity in the office channel: when they joined and left, and when they muted, deafened, turned on their camera or streamed, with their Discord user ID and display name, and a real name if one is filled in. Nothing is ever deleted. Tell the team it's being recorded before turning it on.
+The [database](#database) keeps a detailed record of each person's activity in the office channel: when they joined and left, when they muted, deafened, turned on their camera or streamed, and every soundboard sound and emoji reaction they sent, with their Discord user ID and display name, and a real name if one is filled in. Nothing is ever deleted. Tell the team it's being recorded before turning it on.
+
+While anyone is in the office, the bot shows up in the channel too. It's muted and deafened and never opens an audio connection, so it doesn't hear or record anything anyone says.
 
 Sentry, when it's configured, gets error reports, timings, database queries without their values, and log messages without their annotations, so no names or Discord user IDs. User IDs are also redacted in the announcement logs; an update the database couldn't store is logged in full, but only to the journal.
 
